@@ -224,7 +224,7 @@ export function ProductHero() {
       {/* scroll cue */}
       <div
         ref={scrollCueRef}
-        className="pointer-events-none absolute inset-x-0 top-[52%] z-10 flex flex-col items-center gap-3"
+        className="pointer-events-none absolute inset-x-0 top-[30%] z-10 flex flex-col items-center gap-3 md:top-[52%]"
         style={{ transition: "opacity 200ms linear" }}
       >
         <span className="font-mono text-[11px] uppercase tracking-[0.4em] text-zinc-400">
