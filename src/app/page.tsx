@@ -1,7 +1,11 @@
 import { Navbar } from "@/components/ui/Navbar";
-import { Hero } from "@/components/sections/Hero";
-import { CinematicReveal } from "@/components/sections/CinematicReveal";
-import { SystemsNominal } from "@/components/sections/SystemsNominal";
+import { ProductHero } from "@/components/sections/ProductHero";
+import { SpeedSequence } from "@/components/sections/SpeedSequence";
+import { EngineeringSection } from "@/components/sections/EngineeringSection";
+import { RacketAnatomy } from "@/components/sections/RacketAnatomy";
+import { Specifications } from "@/components/sections/Specifications";
+import { SpeedBreak } from "@/components/sections/SpeedBreak";
+import { ProductFinale } from "@/components/sections/ProductFinale";
 import { Footer } from "@/components/sections/Footer";
 
 export default function Home() {
@@ -9,9 +13,13 @@ export default function Home() {
     <>
       <Navbar />
       <main>
-        <Hero />
-        <CinematicReveal />
-        <SystemsNominal />
+        <ProductHero />
+        <SpeedSequence />
+        <EngineeringSection />
+        <RacketAnatomy />
+        <Specifications />
+        <SpeedBreak />
+        <ProductFinale />
       </main>
       <Footer />
     </>
