@@ -3,6 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowUpRight } from "@phosphor-icons/react";
+import { PRODUCT } from "@/lib/product";
+
+const LINKS = [
+  { href: "#technology", label: "Technology" },
+  { href: "#engineering", label: "Engineering" },
+  { href: "#specs", label: "Specs" },
+];
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -18,7 +25,7 @@ export function Navbar() {
     <header
       className={`fixed inset-x-0 top-0 z-40 transition-[background-color,backdrop-filter,border-color] duration-300 ${
         scrolled
-          ? "border-b border-white/10 bg-black/60 backdrop-blur-2xl backdrop-saturate-150"
+          ? "border-b border-white/10 bg-black/70 backdrop-blur-xl"
           : "border-b border-transparent bg-transparent"
       }`}
     >
@@ -27,35 +34,31 @@ export function Navbar() {
           href="/"
           className="flex items-center gap-2.5 font-mono text-[11px] font-semibold uppercase tracking-[0.32em] text-foreground"
         >
-          <span
-            aria-hidden
-            className="inline-block h-2 w-2 rounded-full bg-accent shadow-[0_0_12px_rgba(212,162,47,0.9)]"
-          />
-          Stark / Industries
+          <span aria-hidden className="inline-block h-1.5 w-3.5 rounded-full bg-accent" />
+          {PRODUCT.shortName}
         </Link>
 
         <nav className="hidden items-center gap-8 md:flex">
-          <a
-            href="#systems"
-            className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400 transition-colors hover:text-foreground"
-          >
-            Systems
-          </a>
-          <a
-            href="#footer"
-            className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400 transition-colors hover:text-foreground"
-          >
-            Archive
-          </a>
+          {LINKS.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              className="font-mono text-[11px] uppercase tracking-[0.24em] text-zinc-400 transition-colors hover:text-foreground"
+            >
+              {link.label}
+            </a>
+          ))}
         </nav>
 
         <a
-          href="#systems"
-          className="group inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.05] px-4 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-foreground backdrop-blur-md transition-all duration-200 hover:bg-white/[0.1] active:translate-y-[1px]"
+          href={PRODUCT.officialProductUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group inline-flex items-center gap-1.5 border border-white/15 px-4 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-foreground transition-colors duration-200 hover:border-accent hover:text-accent"
         >
-          Engage
+          View product
           <ArrowUpRight
-            size={14}
+            size={13}
             weight="bold"
             className="transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
           />
