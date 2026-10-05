@@ -2,99 +2,84 @@
 
 import { getScenario } from "../model/scenarios";
 import { useEco, useEcoEnv } from "./context";
-import { CoinIcon, GearIcon, HelpIcon, InfoIcon, KitchenIcon, LeafIcon, LogoMark, MealIcon, PlotIcon, TargetIcon } from "./icons";
+import { CoinIcon, GearIcon, HelpIcon, LeafIcon, LogoMark, PlayIcon, TargetIcon } from "./icons";
 
 export function TopBar() {
   const { store } = useEcoEnv();
   const credits = useEco((s) => s.save.progress.credits);
+  const pending = useEco((s) => (s.phase === "serving" && s.round ? s.round.credited : 0));
   const scenarioId = useEco((s) => s.save.scenarioId);
   const def = getScenario(scenarioId).definition;
+  const serving = useEco((s) => s.phase === "serving");
   return (
     <header className="eco-topbar">
-      <div className="eco-brand">
-        <LogoMark size={34} />
+      <div className="eco-bar eco-brand">
+        <LogoMark size={30} />
         <div>
           <p className="eco-brand__name">EcoRise</p>
-          <p className="eco-brand__day">
-            Day 1 · {def.dayLabel} · {def.dish}
-          </p>
+          <p className="eco-brand__tag">Smarter lunches · less waste</p>
         </div>
       </div>
-      <ul className="eco-stats" aria-label="Game indicators">
-        <li className="eco-stat" title="Construction credits">
-          <CoinIcon size={20} />
-          <span className="eco-stat__label">Credits</span>
-          <span className="eco-stat__value">{credits}</span>
-        </li>
-        <li className="eco-stat" title="Game indicator. Appears after your first lunch service.">
-          <MealIcon size={20} />
-          <span className="eco-stat__label">Hot meals served</span>
-          <span className="eco-stat__value eco-stat__value--empty" aria-label="not yet measured">
-            —
+      {!serving && (
+        <div className="eco-bar eco-status">
+          <span className="eco-chip">
+            {def.dayLabel.slice(0, 3)}, Week 1
           </span>
-        </li>
-        <li className="eco-stat" title="Game indicator: share of cooked food that was eaten. Appears after your first lunch service.">
-          <LeafIcon size={20} />
-          <span className="eco-stat__label">Food use</span>
-          <span className="eco-stat__value eco-stat__value--empty" aria-label="not yet measured">
-            —
+          <span className="eco-sep" aria-hidden="true" />
+          <span className="eco-chip" title="Eco Credits">
+            <CoinIcon size={18} />
+            <span className="eco-chip__value">{credits - pending}</span>
+            <span className="sr-only">Eco Credits</span>
           </span>
-        </li>
-      </ul>
-      <nav className="eco-tools" aria-label="Game menu">
-        <button type="button" className="eco-icon-btn eco-icon-btn--bar" onClick={store.actions.showIntro} aria-label="How to play" title="How to play">
-          <HelpIcon />
-        </button>
-        <button
-          type="button"
-          className="eco-icon-btn eco-icon-btn--bar"
-          onClick={() => store.actions.openOverlay("about")}
-          aria-label="About the simulation"
-          title="About the simulation"
-        >
-          <InfoIcon />
-        </button>
-        <button
-          type="button"
-          className="eco-icon-btn eco-icon-btn--bar"
-          onClick={() => store.actions.openOverlay("settings")}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <GearIcon />
-        </button>
-      </nav>
+          <span className="eco-sep" aria-hidden="true" />
+          <button type="button" className="eco-icon-btn" onClick={store.actions.showIntro} aria-label="How to play" title="How to play">
+            <HelpIcon size={18} />
+          </button>
+          <button
+            type="button"
+            className="eco-icon-btn"
+            onClick={() => store.actions.openOverlay("settings")}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <GearIcon size={18} />
+          </button>
+        </div>
+      )}
     </header>
   );
 }
 
-export function PlacesNav() {
+/** Bottom-left: the day's goal plus keyboard-reachable actions. */
+export function Dock() {
   const { store, bus } = useEcoEnv();
   const selection = useEco((s) => s.selection);
   return (
-    <nav className="eco-places" aria-label="Places in town">
+    <div className="eco-dock">
+      <div className="eco-goal">
+        <span className="eco-goal__icon" aria-hidden="true">
+          <LeafIcon size={17} />
+        </span>
+        <span>
+          <span className="eco-goal__title">Today&rsquo;s goal</span>
+          <br />
+          <span className="eco-goal__text">Feed every student, waste as little as you can.</span>
+        </span>
+      </div>
+      {selection !== "kitchen" && (
+        <button type="button" className="eco-dock__btn" data-place="kitchen" onClick={() => store.actions.select("kitchen")}>
+          <PlayIcon size={14} /> Plan lunch
+        </button>
+      )}
       <button
         type="button"
-        className="eco-place"
-        data-place="kitchen"
-        aria-pressed={selection === "kitchen"}
-        onClick={() => store.actions.select(selection === "kitchen" ? null : "kitchen")}
+        className="eco-dock__btn eco-dock__icon"
+        onClick={() => bus.emit("recenter", undefined)}
+        aria-label="Recenter the view"
+        title="Recenter the view"
       >
-        <KitchenIcon size={18} /> Lunch Council
-      </button>
-      <button
-        type="button"
-        className="eco-place"
-        data-place="meadow"
-        aria-pressed={selection === "meadow"}
-        onClick={() => store.actions.select(selection === "meadow" ? null : "meadow")}
-      >
-        <PlotIcon size={18} /> East Meadow
-      </button>
-      <button type="button" className="eco-place eco-place--icon" onClick={() => bus.emit("recenter", undefined)} aria-label="Recenter the view" title="Recenter the view">
         <TargetIcon size={18} />
       </button>
-      <span className="eco-places__hint">Drag to look around · scroll to zoom</span>
-    </nav>
+    </div>
   );
 }

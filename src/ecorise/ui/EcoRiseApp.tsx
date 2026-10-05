@@ -1,17 +1,18 @@
 "use client";
 
 import { AnimatePresence, MotionConfig } from "framer-motion";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createBus } from "../state/bus";
 import { getBrowserStorage, loadSave } from "../state/persistence";
 import { createEcoStore, prefersReducedMotion, type Selection } from "../state/store";
+import { BootError, BootSplash } from "./BootScreens";
 import { CouncilPanel } from "./CouncilPanel";
 import { EcoContext, useEco, useEcoEnv, type EcoEnv } from "./context";
 import { GameCanvas } from "./GameCanvas";
-import { PlacesNav, TopBar } from "./Hud";
+import { Dock, TopBar } from "./Hud";
 import { MeadowPanel } from "./MeadowPanel";
-import { BootError, BootSplash } from "./BootScreens";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
+import { ResultsPanel, ServiceHud } from "./Round";
 
 const LOAD_NOTICES: Record<string, string | undefined> = {
   unreadable: "Saved EcoRise data couldn't be read, so a fresh game was started.",
@@ -20,7 +21,20 @@ const LOAD_NOTICES: Record<string, string | undefined> = {
   unavailable: "This browser is blocking storage, so progress won't be saved.",
 };
 
-function createEnv(): EcoEnv {
+type Fonts = { body: string; display: string };
+
+function readFonts(): Fonts {
+  const host = document.querySelector(".eco-fonts") ?? document.body;
+  const style = getComputedStyle(host);
+  const body = style.getPropertyValue("--font-eco-body").trim();
+  const display = style.getPropertyValue("--font-eco-display").trim();
+  return {
+    body: body ? `${body}, system-ui, sans-serif` : "system-ui, sans-serif",
+    display: display ? `${display}, Georgia, serif` : "Georgia, serif",
+  };
+}
+
+function createEnv(): EcoEnv & { fonts: Fonts } {
   const storage = getBrowserStorage();
   const loaded = loadSave(storage);
   const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -32,7 +46,12 @@ function createEnv(): EcoEnv {
   });
   const notice = LOAD_NOTICES[loaded.status];
   if (notice) store.actions.notify(notice);
-  return { store, bus: createBus(), debug: new URLSearchParams(window.location.search).has("debug") };
+  return {
+    store,
+    bus: createBus(),
+    debug: new URLSearchParams(window.location.search).has("debug"),
+    fonts: readFonts(),
+  };
 }
 
 /** Client-only root. Loaded with `ssr: false`, so browser APIs are safe here. */
@@ -40,32 +59,24 @@ export default function EcoRiseApp() {
   const [env] = useState(createEnv);
   return (
     <EcoContext.Provider value={env}>
-      <Shell />
+      <Shell fonts={env.fonts} />
     </EcoContext.Provider>
   );
 }
 
-function Shell() {
+function Shell({ fonts }: { fonts: Fonts }) {
   const { store, bus } = useEcoEnv();
-  const rootRef = useRef<HTMLDivElement>(null);
   const panelSlotRef = useRef<HTMLDivElement>(null);
   const boot = useEco((s) => s.boot);
   const introOpen = useEco((s) => s.introOpen);
   const selection = useEco((s) => s.selection);
   const overlay = useEco((s) => s.overlay);
+  const phase = useEco((s) => s.phase);
+  const round = useEco((s) => s.round);
   const quality = useEco((s) => s.save.settings.quality);
   const reduced = useEco(prefersReducedMotion);
   const [bootKey, setBootKey] = useState(0);
-  const [fontFamily, setFontFamily] = useState("system-ui, sans-serif");
 
-  useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const body = getComputedStyle(root).getPropertyValue("--font-eco-body").trim();
-    if (body) setFontFamily(`${body}, system-ui, sans-serif`);
-  }, []);
-
-  // Follow the device's reduced-motion preference.
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
     const onChange = () => store.actions.setSystemReducedMotion(mq.matches);
@@ -73,7 +84,6 @@ function Shell() {
     return () => mq.removeEventListener("change", onChange);
   }, [store]);
 
-  // Save promptly when the tab is hidden or closed.
   useEffect(() => {
     const flush = () => store.flush();
     const onVisibility = () => {
@@ -99,6 +109,12 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [store]);
 
+  const insetRight = () => {
+    const slot = panelSlotRef.current?.firstElementChild as HTMLElement | null;
+    const rect = slot?.getBoundingClientRect();
+    return rect ? Math.max(0, window.innerWidth - rect.left) : 0;
+  };
+
   // Keep the selected place visible beside the panel, and restore focus on close.
   const openerRef = useRef<HTMLElement | null>(null);
   const prevSelection = useRef<Selection>(null);
@@ -110,38 +126,45 @@ function Shell() {
       openerRef.current = active && active !== document.body ? active : null;
     }
     if (selection) {
-      const raf = requestAnimationFrame(() => {
-        const slot = panelSlotRef.current?.firstElementChild as HTMLElement | null;
-        const rect = slot?.getBoundingClientRect();
-        const insetRight = rect ? Math.max(0, window.innerWidth - rect.left) : 0;
-        bus.emit("focus", { target: selection, insetRight });
-      });
+      const raf = requestAnimationFrame(() => bus.emit("focus", { target: selection, insetRight: insetRight() }));
       return () => cancelAnimationFrame(raf);
     }
-    if (prev && !selection) {
+    if (prev && !selection && phase === "planning") {
       const opener = openerRef.current;
       openerRef.current = null;
-      const fallback = rootRef.current?.querySelector<HTMLElement>(`.eco-place[data-place="${prev}"]`);
       if (opener && opener.isConnected && !opener.closest(".eco-panel")) opener.focus({ preventScroll: true });
-      else if (document.activeElement === document.body || !document.activeElement?.isConnected) fallback?.focus({ preventScroll: true });
     }
-  }, [selection, bus]);
+  }, [selection, bus, phase]);
+
+  // Frame the kitchen, leftovers and bin beside the results card.
+  useEffect(() => {
+    if (phase !== "results") return;
+    const raf = requestAnimationFrame(() => bus.emit("focus", { target: "results", insetRight: insetRight() }));
+    return () => cancelAnimationFrame(raf);
+  }, [phase, bus]);
 
   const ready = boot.status === "ready";
+  const maxFigures = quality === "performance" ? 20 : 30;
+  const figureSize = round ? Math.max(1, Math.ceil(round.report.timeline.steps.length / maxFigures)) : 1;
   return (
     <MotionConfig reducedMotion={reduced ? "always" : "never"}>
-      <div ref={rootRef} className="eco-root" data-reduced-motion={reduced || undefined} data-lenis-prevent>
+      <div className="eco-root" data-reduced-motion={reduced || undefined} data-lenis-prevent>
         <div className="eco-sea" aria-hidden="true" />
-        {boot.status !== "error" && <GameCanvas key={`${bootKey}-${quality}`} quality={quality} fontFamily={fontFamily} />}
+        {boot.status !== "error" && <GameCanvas key={`${bootKey}-${quality}`} quality={quality} fonts={fonts} />}
+        <div className="eco-grade" aria-hidden="true" />
 
         {ready && (
           <div className="eco-hud" inert={introOpen || !!overlay ? true : undefined}>
             <TopBar />
-            <PlacesNav />
-            <div ref={panelSlotRef} className="eco-panel-slot">
-              <AnimatePresence>
-                {selection === "kitchen" && <CouncilPanel key="kitchen" />}
-                {selection === "meadow" && <MeadowPanel key="meadow" />}
+            {phase === "planning" && <Dock />}
+            <AnimatePresence>
+              {phase === "serving" && round && <ServiceHud key={round.attemptId} round={round} figureSize={figureSize} />}
+            </AnimatePresence>
+            <div ref={panelSlotRef} className={`eco-panel-slot${phase === "results" ? " eco-panel-slot--wide" : ""}`}>
+              <AnimatePresence mode="wait">
+                {phase === "planning" && selection === "kitchen" && <CouncilPanel key="kitchen" />}
+                {phase === "planning" && selection === "meadow" && <MeadowPanel key="meadow" />}
+                {phase === "results" && round && <ResultsPanel key={`results-${round.attemptId}`} round={round} />}
               </AnimatePresence>
             </div>
           </div>

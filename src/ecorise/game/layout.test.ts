@@ -6,6 +6,9 @@ import {
   KITCHEN,
   LAMPS,
   MEADOW,
+  QUEUE_SLOTS,
+  SERVE_POINT,
+  TRAY_RETURN_APPROACH,
   TREES,
   doorTile,
   findPath,
@@ -59,10 +62,16 @@ describe("city layout", () => {
     }
   });
 
+  it("queue slots and the serving point lie on walkable street tiles", () => {
+    for (const s of [SERVE_POINT, ...QUEUE_SLOTS, TRAY_RETURN_APPROACH]) {
+      expect(isWalkable(Math.floor(s.x), Math.floor(s.y)), `${s.x},${s.y}`).toBe(true);
+    }
+  });
+
   it("the expansion meadow sits on the island next to the lane", () => {
     for (let y = MEADOW.y; y < MEADOW.y + MEADOW.d; y++) {
       for (let x = MEADOW.x; x < MEADOW.x + MEADOW.w; x++) expect(tileAt(x, y)).toBe("meadow");
     }
-    expect(isWalkable(11, MEADOW.y + MEADOW.d)).toBe(true);
+    expect(isWalkable(12, MEADOW.y + MEADOW.d)).toBe(true);
   });
 });

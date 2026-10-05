@@ -1,6 +1,6 @@
 import type Phaser from "phaser";
 import { iso } from "./art/iso";
-import type { ArtCatalog } from "./art/textures";
+import type { ArtCatalog, PersonFrames } from "./art/textures";
 import { DESTINATIONS, HOMES, doorTile, findPath, type HomeSpec } from "./layout";
 
 type Tile = { x: number; y: number };
@@ -24,7 +24,8 @@ const IDLE_SECONDS: Record<Errand, [number, number]> = {
 
 interface Citizen {
   sprite: Phaser.GameObjects.Image;
-  frames: [string, string];
+  look: PersonFrames;
+  facing: "front" | "back";
   home: HomeSpec;
   tile: Tile;
   path: Tile[];
@@ -66,6 +67,7 @@ export class CitizenCrowd {
   private citizens: Citizen[] = [];
   private reducedMotion = false;
   private time = 0;
+  private active = true;
 
   constructor(
     private scene: Phaser.Scene,
@@ -74,16 +76,18 @@ export class CitizenCrowd {
     private rnd: () => number = Math.random,
   ) {
     for (let i = 0; i < count; i++) {
-      const look = art.citizens[i % art.citizens.length];
+      const look = art.people[i % art.people.length];
       const home = HOMES[i % HOMES.length];
       const start = this.destinationFor(i % 3 === 0 ? "home" : pickErrand(rnd), home);
+      const f0 = look.front[0];
       const sprite = scene.add
-        .image(0, 0, look[0].key)
-        .setOrigin(look[0].originX, look[0].originY)
-        .setScale(0.5);
+        .image(0, 0, f0.key, f0.frame)
+        .setOrigin(f0.originX, f0.originY)
+        .setScale(1 / f0.scale);
       const c: Citizen = {
         sprite,
-        frames: [look[0].key, look[1].key],
+        look,
+        facing: "front",
         home,
         tile: start,
         path: [],
@@ -146,6 +150,7 @@ export class CitizenCrowd {
   }
 
   update(deltaMs: number) {
+    if (!this.active) return;
     const dt = Math.min(deltaMs, 50) / 1000;
     this.time += dt;
     for (const c of this.citizens) {
@@ -154,16 +159,17 @@ export class CitizenCrowd {
         if (c.timer <= 0) {
           c.state = "idle";
           c.timer = 0.3;
-          c.sprite.setVisible(true).setAlpha(1);
+          c.sprite.setVisible(this.active).setAlpha(1);
         }
         continue;
       }
       if (c.state === "idle") {
         c.timer -= dt;
         if (c.timer <= 0) this.startErrand(c);
-        if (c.state === "idle" && c.frame !== 0) {
+        if (c.state === "idle" && (c.frame !== 0 || c.facing !== "front")) {
           c.frame = 0;
-          c.sprite.setTexture(c.frames[0]);
+          c.facing = "front";
+          c.sprite.setTexture(c.look.front[0].key, c.look.front[0].frame);
         }
         this.place(c, 0);
         continue;
@@ -189,13 +195,15 @@ export class CitizenCrowd {
       // Screen-space direction decides which way the figure faces.
       const screenDx = dx - dy;
       if (Math.abs(screenDx) > 0.01) c.sprite.setFlipX(screenDx < 0);
+      c.facing = dx + dy >= 0 ? "front" : "back";
 
       c.stride += dt;
       if (c.stride > 0.16) {
         c.stride = 0;
         c.frame = c.frame ? 0 : 1;
-        c.sprite.setTexture(c.frames[c.frame]);
       }
+      const tex = c.look[c.facing][c.frame];
+      c.sprite.setTexture(tex.key, tex.frame);
       const bob = this.reducedMotion ? 0 : Math.abs(Math.sin(this.time * 11 + c.phase)) * 1.3;
       this.place(c, bob);
     }
@@ -219,6 +227,12 @@ export class CitizenCrowd {
     } else {
       c.state = "idle";
     }
+  }
+
+  /** Hides the townsfolk while lunch service figures take the stage. */
+  setActive(active: boolean) {
+    this.active = active;
+    for (const c of this.citizens) c.sprite.setVisible(active && c.state !== "inside");
   }
 
   destroy() {

@@ -1,7 +1,11 @@
 /** One-off commands from the interface to the city view (not state). */
 export interface BusEvents {
-  focus: { target: "kitchen" | "meadow"; insetRight: number };
+  focus: { target: "kitchen" | "meadow" | "service" | "results"; insetRight: number };
   recenter: undefined;
+  /** Lunch playback: diners handled so far (in queue order). */
+  serviceProgress: { processed: number };
+  serviceSpeed: { speed: 1 | 2 };
+  serviceSkip: undefined;
 }
 
 type Handler<T> = (payload: T) => void;

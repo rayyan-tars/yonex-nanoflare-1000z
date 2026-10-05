@@ -3,78 +3,54 @@
 import { motion } from "framer-motion";
 import { useEffect } from "react";
 import { BALANCE, REWARDS, SERVING_UNITS, UNITS_PER_PORTION } from "../model/config";
+import { forecastRange } from "../model/planning";
+import { getScenario } from "../model/scenarios";
 import { prefersReducedMotion } from "../state/store";
 import { Dialog } from "./Dialog";
 import { useEco, useEcoEnv } from "./context";
-import { FeedbackIcon, KitchenIcon, LogoMark, PlotIcon, UsersIcon } from "./icons";
+import { FeedbackIcon, LogoMark, MealIcon, PotIcon } from "./icons";
 
 export function IntroOverlay() {
   const { store } = useEcoEnv();
+  const scenarioId = useEco((s) => s.save.scenarioId);
+  const scenario = getScenario(scenarioId);
+  const range = forecastRange(scenario, { rsvp: false, planningOffice: false });
   return (
-    <motion.div
-      className="eco-intro"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.25 }}
-    >
+    <motion.div className="eco-intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
       <motion.section
         className="eco-intro__card"
         role="dialog"
         aria-modal="true"
         aria-labelledby="eco-intro-title"
-        initial={{ y: 16, opacity: 0 }}
+        initial={{ y: 14, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 10, opacity: 0 }}
+        exit={{ y: 8, opacity: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
-        <div className="eco-intro__brand">
-          <LogoMark size={44} />
-          <div>
-            <h1 id="eco-intro-title">EcoRise</h1>
-            <p className="eco-intro__tag">Run the Lunch Council</p>
-          </div>
-        </div>
-        <p className="eco-intro__lead">
-          Grow a thriving town by planning school lunches that feed everyone and waste less food. Students and the
-          kitchen each hold part of the answer.
-        </p>
-        <ol className="eco-intro__steps">
+        <p className="eco-intro__eyebrow">{scenario.definition.dayLabel} lunch</p>
+        <h1 id="eco-intro-title">
+          {range.low}–{range.high} students may come.
+        </h1>
+        <ul className="eco-intro__lines">
           <li>
-            <span className="eco-step-icon eco-step-icon--voice">
-              <UsersIcon />
-            </span>
-            <div>
-              <strong>Students speak up</strong>
-              <span>Spend two Student Voice tokens on RSVPs, &ldquo;Small, please&rdquo; reminders or a Feedback Box.</span>
-            </div>
+            <PotIcon size={20} color="#b7791f" />
+            <span>Cook too much</span>
+            <span>food is wasted</span>
           </li>
           <li>
-            <span className="eco-step-icon eco-step-icon--kitchen">
-              <KitchenIcon />
-            </span>
-            <div>
-              <strong>The kitchen plans</strong>
-              <span>Decide how much to cook and whether to offer small servings.</span>
-            </div>
+            <MealIcon size={20} color="#9e3b2e" />
+            <span>Cook too little</span>
+            <span>students miss lunch</span>
           </li>
-          <li>
-            <span className="eco-step-icon eco-step-icon--grow">
-              <PlotIcon />
-            </span>
-            <div>
-              <strong>The town grows</strong>
-              <span>Good lunches earn credits to build on the East Meadow.</span>
-            </div>
-          </li>
-        </ol>
+        </ul>
+        <p className="eco-intro__q">Can you find the balance?</p>
         <button type="button" className="eco-btn eco-btn--primary eco-btn--lg" onClick={store.actions.enterCity} autoFocus>
-          Enter the city
+          Plan lunch
         </button>
-        <p className="eco-intro__note">
-          Prototype build: plan Monday&rsquo;s lunch in the Community Kitchen. Running the lunch service and building
-          arrive in the next build. All scenarios are fictional.
+        <p className="eco-intro__brand">
+          <LogoMark size={22} /> EcoRise
         </p>
+        <p className="eco-intro__note">A school food-waste game. The school and its numbers are fictional.</p>
       </motion.section>
     </motion.div>
   );

@@ -14,8 +14,10 @@ export const SidePanel = forwardRef<
     children: React.ReactNode;
     footer?: React.ReactNode;
     compact?: boolean;
+    closeLabel?: string;
+    className?: string;
   }
->(function SidePanel({ eyebrow, title, onClose, children, footer, compact }, ref) {
+>(function SidePanel({ eyebrow, title, onClose, children, footer, compact, closeLabel, className }, ref) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const id = useId();
   useEffect(() => {
@@ -24,7 +26,7 @@ export const SidePanel = forwardRef<
   return (
     <motion.aside
       ref={ref}
-      className={`eco-panel${compact ? " eco-panel--compact" : ""}`}
+      className={`eco-panel${compact ? " eco-panel--compact" : ""}${className ? ` ${className}` : ""}`}
       aria-labelledby={id}
       initial={{ opacity: 0, x: 28 }}
       animate={{ opacity: 1, x: 0 }}
@@ -38,7 +40,7 @@ export const SidePanel = forwardRef<
             {title}
           </h2>
         </div>
-        <button type="button" className="eco-icon-btn" onClick={onClose} aria-label={`Close ${title}`}>
+        <button type="button" className="eco-icon-btn" onClick={onClose} aria-label={closeLabel ?? `Close ${title}`}>
           <CloseIcon />
         </button>
       </header>

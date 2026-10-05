@@ -182,3 +182,23 @@ export const CounterIcon = (p: IconProps) => (
     <path d="M7 11.5c0-2.2 1.8-4 4-4h2c2.2 0 4 1.8 4 4" />
   </Icon>
 );
+export const StarIcon = (p: IconProps) => (
+  <Icon {...p} strokeWidth={1.6}>
+    <path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.8Z" fill="currentColor" />
+  </Icon>
+);
+export const BulbIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 17.5h6M10 20.5h4M12 3.5a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2v1h5v-1c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3.5Z" />
+  </Icon>
+);
+export const PlayIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 5.5v13l10.5-6.5Z" fill="currentColor" />
+  </Icon>
+);
+export const ForkIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 3.5v17M5 3.5v5a2 2 0 0 0 4 0v-5M16.5 20.5V3.5c-2 1-3 3.5-3 7 0 1.6 1.3 2.5 3 2.5" />
+  </Icon>
+);

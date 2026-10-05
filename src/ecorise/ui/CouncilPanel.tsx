@@ -2,44 +2,39 @@
 
 import { useMemo } from "react";
 import { BALANCE } from "../model/config";
-import { planningView, voiceTokensUsed, type PlanningView } from "../model/planning";
+import { planRisk, planningView, voiceTokensUsed, type PlanningView } from "../model/planning";
 import { getScenario } from "../model/scenarios";
 import type { StudentVoiceAction } from "../model/types";
 import { useEco, useEcoEnv } from "./context";
-import {
-  AlertIcon,
-  CheckIcon,
-  ClipboardIcon,
-  ClockIcon,
-  CrossCircleIcon,
-  FeedbackIcon,
-  InfoIcon,
-  LockIcon,
-  MinusIcon,
-  PlusIcon,
-  PotIcon,
-  SmallBowlIcon,
-  UsersIcon,
-} from "./icons";
+import { CheckIcon, ClipboardIcon, FeedbackIcon, PlayIcon, SmallBowlIcon } from "./icons";
+import { InfoTip } from "./InfoTip";
 import { SidePanel } from "./SidePanel";
 
 const SLIDER_MIN = 60;
 const SLIDER_MAX = 180;
 
-const VOICE_CARDS: {
-  action: StudentVoiceAction;
-  title: string;
-  effect: string;
-  Icon: typeof ClipboardIcon;
-}[] = [
-  { action: "rsvp", title: "Lunch RSVP", effect: "Students say if they're coming. Narrows the attendance forecast.", Icon: ClipboardIcon },
+const VOICE: { action: StudentVoiceAction; title: string; effect: string; more: string; Icon: typeof ClipboardIcon }[] = [
+  {
+    action: "rsvp",
+    title: "RSVP",
+    effect: "Better forecast",
+    more: "Students say in the morning whether they'll eat lunch. The kitchen sees a narrower attendance range.",
+    Icon: ClipboardIcon,
+  },
   {
     action: "smallPlease",
-    title: "“Small, please”",
-    effect: "Reminds students who want less to ask for a small serving.",
+    title: "Small, please",
+    effect: "Less plate waste",
+    more: "Reminds students who usually leave food to ask for a small serving. Only helps if the kitchen offers small servings.",
     Icon: SmallBowlIcon,
   },
-  { action: "feedback", title: "Feedback Box", effect: "Reveals how diners feel about today's portion size.", Icon: FeedbackIcon },
+  {
+    action: "feedback",
+    title: "Feedback",
+    effect: "Know preferences",
+    more: "Students say whether a full portion is more than they eat. The kitchen can then plan for small servings.",
+    Icon: FeedbackIcon,
+  },
 ];
 
 export function CouncilPanel() {
@@ -50,6 +45,7 @@ export function CouncilPanel() {
   const scenarioId = useEco((s) => s.save.scenarioId);
   const scenario = getScenario(scenarioId);
   const view = useMemo(() => planningView(scenario, voice, policy, upgrades), [scenario, voice, policy, upgrades]);
+  const risk = useMemo(() => planRisk(view, policy.offerSmallServings), [view, policy.offerSmallServings]);
   const used = voiceTokensUsed(voice);
   const max = BALANCE.maxStudentVoiceTokens;
   const def = scenario.definition;
@@ -60,34 +56,28 @@ export function CouncilPanel() {
       title="Lunch Council"
       onClose={store.actions.clearSelection}
       footer={
-        <div className="eco-pending" role="note">
-          <ClockIcon size={18} />
-          <div>
-            <strong>Lunch service arrives in the next build.</strong>
-            <span>Your plan is saved and will be used when it does.</span>
-          </div>
-        </div>
+        <button type="button" className="eco-btn eco-btn--primary eco-btn--serve" onClick={store.actions.serveLunch}>
+          <PlayIcon size={16} /> Serve lunch
+        </button>
       }
     >
-      <p className="eco-brief">{def.briefing}</p>
-
-      <section className="eco-section" aria-labelledby="eco-voice-h">
-        <div className="eco-section__head">
-          <h3 id="eco-voice-h">
-            <UsersIcon size={18} /> Student Voice
+      <section className="eco-step" aria-labelledby="eco-s1">
+        <div className="eco-step__head">
+          <span className="eco-step__num" aria-hidden="true">
+            1
+          </span>
+          <h3 id="eco-s1" className="eco-step__title">
+            Student Voice
           </h3>
-          <div className="eco-tokens" aria-label={`${used} of ${max} tokens used`}>
+          <span className="eco-tokens" aria-label={`${max - used} of ${max} tokens left`} role="img">
             {Array.from({ length: max }, (_, i) => (
-              <span key={i} className={`eco-token${i < used ? " eco-token--used" : ""}`} aria-hidden="true" />
+              <span key={i} className={`eco-token${i < used ? " eco-token--used" : ""}`} />
             ))}
-            <span className="eco-tokens__text">
-              {max - used} of {max} left
-            </span>
-          </div>
+          </span>
+          <InfoTip label="About Student Voice">Students can do two things before lunch. Pick up to two; you can change your mind.</InfoTip>
         </div>
-        <p className="eco-hint">What students can do. Choose up to two; you can change your mind.</p>
         <div className="eco-voice-grid">
-          {VOICE_CARDS.map(({ action, title, effect, Icon }) => {
+          {VOICE.map(({ action, title, effect, more, Icon }) => {
             const on = voice[action];
             const blocked = !on && used >= max;
             return (
@@ -96,58 +86,71 @@ export function CouncilPanel() {
                 type="button"
                 className={`eco-voice${on ? " eco-voice--on" : ""}${blocked ? " eco-voice--blocked" : ""}`}
                 aria-pressed={on}
-                aria-describedby={`eco-voice-${action}`}
+                title={more}
                 onClick={() => store.actions.toggleVoice(action)}
               >
+                <span className="eco-voice__check" aria-hidden="true">
+                  {on && <CheckIcon size={11} />}
+                </span>
                 <span className="eco-voice__icon">
-                  <Icon size={22} />
+                  <Icon size={20} />
                 </span>
                 <span className="eco-voice__title">{title}</span>
-                <span className="eco-voice__effect" id={`eco-voice-${action}`}>
-                  {effect}
-                </span>
-                <span className="eco-voice__state" aria-hidden="true">
-                  {on ? (
-                    <>
-                      <CheckIcon size={14} /> Chosen
-                    </>
-                  ) : blocked ? (
-                    <>
-                      <LockIcon size={13} /> No tokens left
-                    </>
-                  ) : (
-                    "Choose"
-                  )}
-                </span>
+                <span className="eco-voice__effect">{effect}</span>
               </button>
             );
           })}
         </div>
+        {view.feedback && (
+          <p className="eco-reveal">
+            <FeedbackIcon size={16} />
+            <span>
+              <strong>{view.feedback.portionTooBigPercent}%</strong> say a full portion is too much
+            </span>
+          </p>
+        )}
       </section>
 
-      <section className="eco-section" aria-labelledby="eco-know-h">
-        <h3 id="eco-know-h">
-          <InfoIcon size={18} /> What the kitchen knows
-        </h3>
-        <ForecastBar view={view} />
-        <div className={`eco-feedback${view.feedback ? " eco-feedback--on" : ""}`}>
-          <FeedbackIcon size={18} />
-          {view.feedback ? (
-            <p>
-              <strong>Feedback Box:</strong> about {view.feedback.portionTooBigPercent}% of today&rsquo;s diners say a
-              regular {def.dish.toLowerCase()} portion is more than they eat.
-            </p>
-          ) : (
-            <p className="eco-muted">Portion preferences unknown. Choose the Feedback Box to find out.</p>
-          )}
+      <section className="eco-step" aria-labelledby="eco-s2">
+        <div className="eco-step__head">
+          <span className="eco-step__num" aria-hidden="true">
+            2
+          </span>
+          <h3 id="eco-s2" className="eco-step__title">
+            Kitchen plan
+          </h3>
+          <InfoTip label="About the forecast">
+            Any number in the range is equally likely. Cook more and fewer students miss out, but more food may be wasted.
+          </InfoTip>
         </div>
-      </section>
-
-      <section className="eco-section" aria-labelledby="eco-plan-h">
-        <h3 id="eco-plan-h">
-          <PotIcon size={18} /> Kitchen plan
-        </h3>
-        <PortionControl view={view} />
+        <Forecast view={view} />
+        <Portions view={view} />
+        <div className="eco-risk" aria-live="polite">
+          <div className="eco-risk__item">
+            <div className="eco-risk__row">
+              <span>Shortage risk</span>
+              <strong>{risk.shortagePercent}%</strong>
+            </div>
+            <div className="eco-meter eco-meter--short" aria-hidden="true">
+              <span style={{ width: `${risk.shortagePercent}%` }} />
+            </div>
+          </div>
+          <div className="eco-risk__item">
+            <div className="eco-risk__row">
+              <span>Likely waste</span>
+              <strong>
+                ~{risk.expectedWaste}
+                {!risk.plateWasteKnown && "+"}
+              </strong>
+            </div>
+            <div className="eco-meter eco-meter--waste" aria-hidden="true">
+              <span style={{ width: `${Math.min(100, (risk.expectedWaste / 40) * 100)}%` }} />
+            </div>
+          </div>
+        </div>
+        {policy.offerSmallServings && !risk.plateWasteKnown && (
+          <p className="eco-hint-line">Risk assumes full portions. Feedback shows how far small servings stretch the food.</p>
+        )}
         <label className="eco-switch">
           <input
             type="checkbox"
@@ -158,154 +161,73 @@ export function CouncilPanel() {
           <span className="eco-switch__track" aria-hidden="true">
             <span className="eco-switch__thumb" />
           </span>
-          <span className="eco-switch__text">
-            <strong>Offer small servings</strong>
-            <span>Less left on plates, but each diner takes a little longer to serve.</span>
-          </span>
+          <span className="eco-switch__label">Offer small servings</span>
+          <InfoTip label="About small servings">
+            Students who ask get about 60% of a portion. Less is left on plates, but each student takes a little longer to
+            serve. It saves food only if the kitchen also cooks less.
+          </InfoTip>
         </label>
-        <Checks view={view} />
+        {!view.capacityCoversForecastHigh && (
+          <p className="eco-note">Counter serves ~{view.capacity} in {BALANCE.lunchWindowMinutes} min</p>
+        )}
       </section>
     </SidePanel>
   );
 }
 
-function ForecastBar({ view }: { view: PlanningView }) {
-  const lo = SLIDER_MIN;
-  const hi = SLIDER_MAX;
-  const pos = (n: number) => `${((Math.min(hi, Math.max(lo, n)) - lo) / (hi - lo)) * 100}%`;
+function Forecast({ view }: { view: PlanningView }) {
+  const pos = (n: number) => `${((Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, n)) - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)) * 100}%`;
   const { low, high, basis } = view.forecast;
   return (
-    <div className="eco-forecast">
-      <div className="eco-forecast__label">
-        <span>Expected diners</span>
-        <strong>
-          {low}–{high}
-        </strong>
+    <div>
+      <div className="eco-forecast">
+        <div>
+          <div className="eco-forecast__lab">Low</div>
+          <div className="eco-forecast__num">{low}</div>
+        </div>
+        <div className="eco-forecast__mid">
+          Expected students
+          {basis === "rsvp" && <span className="eco-forecast__tag">RSVP</span>}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="eco-forecast__lab">High</div>
+          <div className="eco-forecast__num">{high}</div>
+        </div>
       </div>
-      <div className="eco-forecast__track" aria-hidden="true">
-        <span className="eco-forecast__band" style={{ left: pos(low), width: `calc(${pos(high)} - ${pos(low)})` }} />
-        <span className="eco-forecast__cooked" style={{ left: pos(view.portions) }} title="Portions to cook" />
+      <div className="eco-track" aria-hidden="true">
+        <span className="eco-track__band" style={{ left: pos(low), width: `calc(${pos(high)} - ${pos(low)})` }} />
+        <span className="eco-track__mark" style={{ left: pos(view.portions) }} />
       </div>
-      <div className="eco-forecast__scale" aria-hidden="true">
-        <span>{lo}</span>
-        <span>{(lo + hi) / 2}</span>
-        <span>{hi}</span>
-      </div>
-      <p className="eco-small eco-muted">
-        {basis === "rsvp" ? "Narrowed by RSVP replies." : "A broad estimate. RSVP replies would narrow it."}
-      </p>
     </div>
   );
 }
 
-function PortionControl({ view }: { view: PlanningView }) {
+function Portions({ view }: { view: PlanningView }) {
   const { store } = useEcoEnv();
   const value = view.portions;
   return (
     <div className="eco-portions">
-      <div className="eco-portions__row">
-        <label htmlFor="eco-portions" className="eco-portions__label">
-          Portions to cook
-        </label>
-        <output htmlFor="eco-portions" className="eco-portions__value">
-          {value}
-        </output>
-      </div>
-      <div className="eco-portions__row">
-        <button
-          type="button"
-          className="eco-icon-btn eco-icon-btn--soft"
-          aria-label="Cook one fewer portion"
-          onClick={() => store.actions.setPortions(value - 1)}
-          disabled={value <= SLIDER_MIN}
-        >
-          <MinusIcon size={18} />
-        </button>
-        <input
-          id="eco-portions"
-          type="range"
-          min={SLIDER_MIN}
-          max={SLIDER_MAX}
-          step={1}
-          value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, value))}
-          onChange={(e) => store.actions.setPortions(Number(e.target.value))}
-          aria-valuetext={`${value} portions`}
-          style={{ ["--fill" as string]: `${((value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)) * 100}%` }}
-        />
-        <button
-          type="button"
-          className="eco-icon-btn eco-icon-btn--soft"
-          aria-label="Cook one more portion"
-          onClick={() => store.actions.setPortions(value + 1)}
-          disabled={value >= SLIDER_MAX}
-        >
-          <PlusIcon size={18} />
-        </button>
-      </div>
+      <label htmlFor="eco-portions">Portions</label>
+      <input
+        id="eco-portions"
+        type="range"
+        min={SLIDER_MIN}
+        max={SLIDER_MAX}
+        step={1}
+        value={Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, value))}
+        onChange={(e) => store.actions.setPortions(Number(e.target.value))}
+        aria-valuetext={`${value} portions`}
+        style={{ ["--fill" as string]: `${((value - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)) * 100}%` }}
+      />
+      <input
+        className="eco-num"
+        type="number"
+        min={0}
+        max={BALANCE.maxPortionsPrepared}
+        value={value}
+        aria-label="Portions to cook"
+        onChange={(e) => store.actions.setPortions(Number(e.target.value))}
+      />
     </div>
-  );
-}
-
-type Level = "ok" | "warn" | "bad" | "info";
-
-function Check({ level, children }: { level: Level; children: React.ReactNode }) {
-  const Icon = level === "ok" ? CheckIcon : level === "warn" ? AlertIcon : level === "bad" ? CrossCircleIcon : InfoIcon;
-  const label = level === "ok" ? "Looks fine" : level === "warn" ? "Risk" : level === "bad" ? "Problem" : "Note";
-  return (
-    <li className={`eco-check eco-check--${level}`}>
-      <span className="eco-check__icon" role="img" aria-label={label}>
-        <Icon size={16} />
-      </span>
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function Checks({ view }: { view: PlanningView }) {
-  const { low, high } = view.forecast;
-  const p = view.portions;
-  const minutes = BALANCE.lunchWindowMinutes;
-  return (
-    <ul className="eco-checks" aria-label="Plan check">
-      {p >= high ? (
-        <Check level={p - low > 15 ? "warn" : "ok"}>
-          Enough regular servings even if all {high} come.
-          {p - low > 15 && ` But if only ${low} come, up to ${p - low} portions could go unserved.`}
-        </Check>
-      ) : p >= low ? (
-        <Check level="warn">
-          Covers up to {p} diners on regular servings. If more come (up to {high}), some could miss the hot meal unless
-          small servings stretch the food.
-        </Check>
-      ) : (
-        <Check level="bad">
-          Fewer portions than the lowest forecast ({low}). Some diners will probably miss the hot meal.
-        </Check>
-      )}
-      <Check level={view.capacityCoversForecastHigh ? "ok" : "warn"}>
-        The counter can serve about {view.capacity} diners in the {minutes}-minute window
-        {view.capacityCoversForecastHigh ? "." : `, fewer than the top of the forecast (${high}).`}
-        {view.capacity !== view.capacityIfToggled &&
-          (view.capacity < view.capacityIfToggled
-            ? ` Without small servings it could serve ${view.capacityIfToggled}.`
-            : ` Offering small servings would lower this to ${view.capacityIfToggled}.`)}
-      </Check>
-      {view.cooperation === "both" && (
-        <Check level="ok">
-          Kitchen and students are working together: about {Math.round(view.askRatePercent / 10)} in 10 diners who want
-          less will ask for a small serving.
-        </Check>
-      )}
-      {view.cooperation === "kitchen-only" && (
-        <Check level="info">
-          Small servings are on offer, but only about {Math.round(view.askRatePercent / 10)} in 10 diners who want less
-          will ask. A &ldquo;Small, please&rdquo; reminder would help.
-        </Check>
-      )}
-      {view.cooperation === "students-only" && (
-        <Check level="warn">Students are reminded to ask for small servings, but the kitchen isn&rsquo;t offering them yet.</Check>
-      )}
-      {view.cooperation === "neither" && <Check level="info">Everyone will get a regular serving.</Check>}
-    </ul>
   );
 }

@@ -6,7 +6,7 @@
 
 export const GRID = 16;
 
-export type TileKind = "water" | "grass" | "path" | "plaza" | "terrace" | "meadow";
+export type TileKind = "water" | "grass" | "path" | "plaza" | "terrace" | "meadow" | "yard";
 
 export interface Footprint {
   x: number;
@@ -27,18 +27,21 @@ export interface HomeSpec {
   roof: number;
 }
 
-export const KITCHEN: Footprint = { x: 7, y: 5, w: 3, d: 2 };
-export const MEADOW: Footprint = { x: 10, y: 1, w: 4, d: 4 };
+/** The school cafeteria (the hero building). */
+export const KITCHEN: Footprint = { x: 7, y: 4, w: 4, d: 3 };
+/** Service yard beside the kitchen: bins, crates and leftover containers. */
+export const YARD: Footprint = { x: 11, y: 4, w: 1, d: 3 };
+export const MEADOW: Footprint = { x: 12, y: 2, w: 3, d: 3 };
 export const PLAZA: Footprint = { x: 3, y: 8, w: 3, d: 2 };
 export const TERRACE: Footprint = { x: 8, y: 8, w: 4, d: 2 };
 
 export const HOMES: readonly HomeSpec[] = [
-  { id: "h1", x: 2, y: 6, style: "cottage", door: "left", wall: 0xfff1dc, roof: 0xd9623b },
-  { id: "h2", x: 4, y: 6, style: "townhouse", door: "left", wall: 0xcfe3c2, roof: 0x4d7fa3 },
-  { id: "h3", x: 5, y: 4, style: "bungalow", door: "right", wall: 0xf7dc9a, roof: 0x4f8a5b },
-  { id: "h4", x: 5, y: 2, style: "cottage", door: "right", wall: 0xf4c9b8, roof: 0x8a5a9e },
-  { id: "h5", x: 8, y: 10, style: "townhouse", door: "left", wall: 0xc9dceb, roof: 0xd9623b },
-  { id: "h6", x: 10, y: 10, style: "bungalow", door: "left", wall: 0xfff1dc, roof: 0x4d7fa3 },
+  { id: "h1", x: 2, y: 6, style: "cottage", door: "left", wall: 0xeee3cd, roof: 0xa9523a },
+  { id: "h2", x: 4, y: 6, style: "townhouse", door: "left", wall: 0xc9cfb0, roof: 0x4c5a63 },
+  { id: "h3", x: 5, y: 4, style: "bungalow", door: "right", wall: 0xe3cfa2, roof: 0x55703f },
+  { id: "h4", x: 5, y: 2, style: "cottage", door: "right", wall: 0xd8b6a0, roof: 0x5e4b5c },
+  { id: "h5", x: 8, y: 10, style: "townhouse", door: "left", wall: 0xbfc8cc, roof: 0xa9523a },
+  { id: "h6", x: 10, y: 10, style: "bungalow", door: "left", wall: 0xeee3cd, roof: 0x4c5a63 },
 ];
 
 /** Tile a citizen stands on when "at the door" of each home. */
@@ -50,17 +53,40 @@ export const NOTICEBOARD = { x: 3, y: 8 };
 export const FEEDBACK_BOX = { x: 4, y: 8 };
 export const TABLES = [
   { x: 9, y: 8 },
-  { x: 11, y: 9 },
+  { x: 10, y: 9 },
 ];
+/** Tray return with a food-scraps bin, where plate waste becomes visible. */
+export const TRAY_RETURN = { x: 11, y: 8 };
+/** Tile students stand on to hand back trays. */
+export const TRAY_RETURN_APPROACH = { x: 11, y: 7 };
 export const BENCH = { x: 3, y: 9 };
 export const FLAGPOLE = { x: 2, y: 9 };
-export const BIN = { x: 12, y: 8 };
-export const CRATES = { x: 10, y: 6 };
+export const CRATES = { x: 11, y: 4 };
 export const LAMPS = [
   { x: 5, y: 6 },
   { x: 7, y: 12 },
-  { x: 12, y: 6 },
+  { x: 13, y: 6 },
 ];
+
+/** Where the head of the lunch queue stands, in front of the serving hatch. */
+export const SERVE_POINT = { x: 8.1, y: 7.38 };
+
+/**
+ * Queue slots along Street A, snaking back on a second lane. Grid
+ * coordinates (fractional). Slot 0 is at the hatch.
+ */
+export const QUEUE_SLOTS: readonly { x: number; y: number }[] = (() => {
+  const slots: { x: number; y: number }[] = [];
+  for (let i = 0; i < 14; i++) slots.push({ x: SERVE_POINT.x - 0.42 * i, y: 7.38 });
+  for (let i = 0; i < 13; i++) slots.push({ x: 2.64 + 0.42 * i, y: 7.84 });
+  return slots;
+})();
+
+/** Rope barrier posts between the two queue lanes. */
+export const BARRIER_POSTS: readonly { x: number; y: number }[] = [3.0, 4.0, 5.0, 6.0, 7.0].map((x) => ({
+  x,
+  y: 7.62,
+}));
 
 export const TREES: readonly { x: number; y: number; kind: "round" | "pine" | "bush" }[] = [
   { x: 3, y: 3, kind: "round" },
@@ -96,7 +122,7 @@ for (let y = 2; y <= 12; y++) PATH_TILES.push([6, y]);
 // Street C.
 for (let x = 3; x <= 11; x++) PATH_TILES.push([x, 11]);
 // Lane from Street A up to the East Meadow gate.
-PATH_TILES.push([11, 5], [11, 6]);
+PATH_TILES.push([12, 5], [12, 6]);
 
 function inIsland(x: number, y: number): boolean {
   if (x < 1 || y < 1 || x > 14 || y > 14) return false;
@@ -123,6 +149,7 @@ export const TILES: TileKind[][] = (() => {
       else if (inFootprint(MEADOW, x, y)) row.push("meadow");
       else if (inFootprint(PLAZA, x, y)) row.push("plaza");
       else if (inFootprint(TERRACE, x, y)) row.push("terrace");
+      else if (inFootprint(YARD, x, y)) row.push("yard");
       else row.push("grass");
     }
     t.push(row);
@@ -141,7 +168,8 @@ const BLOCKED = new Set<string>([
   `${FEEDBACK_BOX.x},${FEEDBACK_BOX.y}`,
   `${FLAGPOLE.x},${FLAGPOLE.y}`,
   `${BENCH.x},${BENCH.y}`,
-  ...TABLES.map((t) => `${t.x},${t.y}`),
+  // Tables are not blocked: a student standing on a table tile is eating there.
+  `${TRAY_RETURN.x},${TRAY_RETURN.y}`,
 ]);
 
 /** Tiles citizens may walk on. */
@@ -164,13 +192,13 @@ export const DESTINATIONS = {
     { x: 5, y: 9 },
   ],
   terrace: [
-    { x: 8, y: 8 },
-    { x: 10, y: 8 },
-    { x: 9, y: 9 },
+    { x: 9, y: 8 },
     { x: 10, y: 9 },
     { x: 8, y: 9 },
+    { x: 11, y: 9 },
+    { x: 8, y: 8 },
   ],
-  lookout: [{ x: 11, y: 5 }],
+  lookout: [{ x: 12, y: 5 }],
 };
 
 /** Breadth-first path between two walkable tiles (4-neighbour). */

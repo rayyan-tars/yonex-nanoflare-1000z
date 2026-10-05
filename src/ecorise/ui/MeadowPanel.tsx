@@ -6,55 +6,32 @@ import { CoinIcon, CounterIcon, LockIcon, OfficeIcon } from "./icons";
 import { SidePanel } from "./SidePanel";
 
 const OPTIONS = [
-  {
-    id: "planningOffice" as const,
-    name: "Planning Office",
-    Icon: OfficeIcon,
-    effect: "Narrower attendance forecasts every day, so the kitchen can cook closer to what's needed.",
-  },
-  {
-    id: "secondCounter" as const,
-    name: "Second Counter",
-    Icon: CounterIcon,
-    effect: "Serves diners faster, so offering small servings no longer risks a long queue.",
-  },
+  { id: "planningOffice" as const, name: "Planning Office", effect: "Sharper forecasts", Icon: OfficeIcon },
+  { id: "secondCounter" as const, name: "Second Counter", effect: "Faster service", Icon: CounterIcon },
 ];
 
 export function MeadowPanel() {
   const { store } = useEcoEnv();
   const credits = useEco((s) => s.save.progress.credits);
   return (
-    <SidePanel eyebrow="Expansion plot" title="East Meadow" onClose={store.actions.clearSelection} compact>
-      <p className="eco-brief">
-        Open land at the edge of town. Each building here changes how lunches can be planned, so choose the one that
-        fits your strategy.
-      </p>
-      <p className="eco-credit-line">
-        <CoinIcon size={18} /> You have <strong>{credits}</strong> credits.
-      </p>
+    <SidePanel eyebrow="Future building" title="East plot" onClose={store.actions.clearSelection} compact>
       <ul className="eco-build-list">
-        {OPTIONS.map(({ id, name, Icon, effect }) => (
+        {OPTIONS.map(({ id, name, effect, Icon }) => (
           <li key={id} className="eco-build">
-            <span className="eco-build__icon">
-              <Icon size={22} />
-            </span>
-            <div className="eco-build__text">
+            <Icon size={20} />
+            <span className="eco-build__text">
               <strong>{name}</strong>
               <span>{effect}</span>
-            </div>
+            </span>
             <span className="eco-build__cost">
               <CoinIcon size={15} /> {BUILDING_COSTS[id]}
             </span>
           </li>
         ))}
       </ul>
-      <div className="eco-pending" role="note">
-        <LockIcon size={18} />
-        <div>
-          <strong>Building opens after a successful lunch service.</strong>
-          <span>Lunch service and construction arrive in the next build.</span>
-        </div>
-      </div>
+      <p className="eco-build-lock">
+        <LockIcon size={15} /> Building opens in the next update. You have {credits} Eco Credits.
+      </p>
     </SidePanel>
   );
 }

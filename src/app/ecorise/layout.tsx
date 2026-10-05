@@ -1,16 +1,15 @@
-import { Fredoka, Nunito } from "next/font/google";
+import { Figtree, Fraunces } from "next/font/google";
 import "@/ecorise/ui/ecorise.css";
 
-const display = Fredoka({
+const display = Fraunces({
   variable: "--font-eco-display",
   subsets: ["latin"],
-  weight: ["500", "600"],
+  axes: ["opsz", "SOFT"],
 });
 
-const body = Nunito({
+const body = Figtree({
   variable: "--font-eco-body",
   subsets: ["latin"],
-  weight: ["400", "600", "700", "800"],
 });
 
 export default function EcoRiseLayout({ children }: { children: React.ReactNode }) {

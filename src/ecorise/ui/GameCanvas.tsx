@@ -12,7 +12,7 @@ const BOOT_TIMEOUT_MS = 20000;
  * child element; cleanup destroys the game and removes that element, so
  * development double-mounts cannot leave a second canvas behind.
  */
-export function GameCanvas({ quality, fontFamily }: { quality: QualitySetting; fontFamily: string }) {
+export function GameCanvas({ quality, fonts }: { quality: QualitySetting; fonts: { body: string; display: string } }) {
   const { store, bus, debug } = useEcoEnv();
   const hostRef = useRef<HTMLDivElement>(null);
   const debugRef = useRef<HTMLDivElement>(null);
@@ -37,15 +37,20 @@ export function GameCanvas({ quality, fontFamily }: { quality: QualitySetting; f
       }
     }, BOOT_TIMEOUT_MS);
 
-    import("../game/createGame")
-      .then(({ createGame }) => {
+    // Canvas-baked signs need the web fonts before the art is drawn.
+    const fontsReady = Promise.all([
+      document.fonts?.load(`600 12px ${fonts.body}`),
+      document.fonts?.load(`600 12px ${fonts.display}`),
+    ]).catch(() => undefined);
+    Promise.all([import("../game/createGame"), fontsReady])
+      .then(([{ createGame }]) => {
         if (cancelled) return;
         try {
           handle = createGame(mount, {
             store,
             bus,
             quality,
-            fontFamily,
+            fonts,
             debugEl: debug ? debugRef.current : null,
             onReady: () => {
               if (!cancelled) store.actions.bootReady();
@@ -65,7 +70,7 @@ export function GameCanvas({ quality, fontFamily }: { quality: QualitySetting; f
       handle = null;
       mount.remove();
     };
-  }, [store, bus, quality, fontFamily, debug]);
+  }, [store, bus, quality, fonts, debug]);
 
   return (
     <>
