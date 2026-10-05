@@ -1,4 +1,4 @@
-import { BALANCE } from "./config";
+import { BALANCE, SERVING_UNITS } from "./config";
 import { askRate, sanitizePortions, servingCapacity } from "./simulation";
 import type { KitchenPolicy, Scenario, StudentVoice, StudentVoiceAction, Upgrades } from "./types";
 
@@ -93,6 +93,46 @@ export function planningView(
     capacityCoversForecastHigh: capacity >= forecast.high,
   };
 }
+
+export interface PlanRisk {
+  /** Chance (0–100) that at least one student misses a hot meal. */
+  shortagePercent: number;
+  /** Expected portions cooked but not eaten, as far as the kitchen can tell. */
+  expectedWaste: number;
+  /** False when the kitchen has no feedback, so plate waste is invisible to it. */
+  plateWasteKnown: boolean;
+}
+
+/**
+ * What the kitchen can estimate from the information it has. Game
+ * simplification: every attendance in the shown range is equally likely
+ * (true for how scenarios are generated). Without Feedback the kitchen
+ * assumes everyone eats a full regular portion, so it cannot see plate waste
+ * or count on small servings stretching the food.
+ */
+export function planRisk(view: PlanningView, offerSmallServings: boolean): PlanRisk {
+  const share = view.feedback ? view.feedback.portionTooBigPercent / 100 : null;
+  const smallSaving = 1 - SERVING_UNITS.small / SERVING_UNITS.regular;
+  const servedPerDiner =
+    share !== null && offerSmallServings ? 1 - share * (view.askRatePercent / 100) * smallSaving : 1;
+  const eatenPerDiner = share !== null ? 1 - share * smallSaving : servedPerDiner;
+  const { low, high } = view.forecast;
+  const feedable = Math.min(Math.floor(view.portions / servedPerDiner + 1e-9), view.capacity);
+  let short = 0;
+  let waste = 0;
+  for (let a = low; a <= high; a++) {
+    const fed = Math.min(a, feedable);
+    if (fed < a) short++;
+    waste += Math.max(0, view.portions - fed * eatenPerDiner);
+  }
+  const n = high - low + 1;
+  return {
+    shortagePercent: Math.round((short / n) * 100),
+    expectedWaste: Math.round(waste / n),
+    plateWasteKnown: share !== null,
+  };
+}
+
 
 export const NO_VOICE: StudentVoice = Object.freeze({
   rsvp: false,

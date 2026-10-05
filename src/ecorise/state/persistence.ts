@@ -20,7 +20,26 @@ export interface SaveData {
   onboardingDone: boolean;
   scenarioId: string;
   draft: { voice: StudentVoice; policy: KitchenPolicy };
-  progress: { credits: number; ledger: RewardLedger };
+  progress: {
+    credits: number;
+    ledger: RewardLedger;
+    /** Best stars and lowest waste per meal per scenario (display only). */
+    best: Record<string, BestRecord>;
+    /** Most recent round, for the top-bar indicators. */
+    last: LastRound | null;
+  };
+}
+
+export interface BestRecord {
+  stars: number;
+  wastePerMeal: number | null;
+}
+
+export interface LastRound {
+  scenarioId: string;
+  hotMeals: number;
+  attendance: number;
+  wastePerMeal: number | null;
 }
 
 export const DEFAULT_POLICY: KitchenPolicy = { portionsPrepared: 125, offerSmallServings: false };
@@ -32,7 +51,7 @@ export function defaultSave(): SaveData {
     onboardingDone: false,
     scenarioId: DEFAULT_SCENARIO_ID,
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
-    progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER },
+    progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null },
   };
 }
 
@@ -128,9 +147,33 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
       d.progress.credits,
     ),
     ledger: fix(ledger !== null, ledger ?? EMPTY_LEDGER, EMPTY_LEDGER),
+    // Added after the first build: absent is normal, malformed is repaired.
+    best: progress.best === undefined ? {} : fix(validBest(progress.best), progress.best as Record<string, BestRecord>, {}),
+    last: progress.last === undefined || progress.last === null ? null : fix(validLast(progress.last), progress.last as LastRound, null),
   };
 
   return { data: out, repaired };
+}
+
+const finiteOrNull = (v: unknown) => v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
+
+function validBest(raw: unknown): boolean {
+  if (!isRecord(raw)) return false;
+  return Object.values(raw).every(
+    (b) => isRecord(b) && typeof b.stars === "number" && b.stars >= 0 && b.stars <= 3 && finiteOrNull(b.wastePerMeal),
+  );
+}
+
+function validLast(raw: unknown): boolean {
+  return (
+    isRecord(raw) &&
+    typeof raw.scenarioId === "string" &&
+    typeof raw.hotMeals === "number" &&
+    typeof raw.attendance === "number" &&
+    raw.hotMeals >= 0 &&
+    raw.hotMeals <= raw.attendance &&
+    finiteOrNull(raw.wastePerMeal)
+  );
 }
 
 function validateLedger(raw: unknown): RewardLedger | null {
