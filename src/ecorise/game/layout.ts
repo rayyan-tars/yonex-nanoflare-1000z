@@ -59,6 +59,10 @@ export const TABLES = [
 export const TRAY_RETURN = { x: 11, y: 8 };
 /** Tile students stand on to hand back trays. */
 export const TRAY_RETURN_APPROACH = { x: 11, y: 7 };
+/** Sustainability board for the real-world Cafeteria Waste Audit, by the tray return. */
+export const MISSION_BOARD = { x: 12, y: 8 };
+/** Campus Sustainability Flag: raised once a real audit is verified. */
+export const SUSTAIN_FLAG = { x: 13, y: 7 };
 export const BENCH = { x: 3, y: 9 };
 export const FLAGPOLE = { x: 2, y: 9 };
 export const CRATES = { x: 11, y: 4 };
@@ -102,7 +106,7 @@ export const TREES: readonly { x: number; y: number; kind: "round" | "pine" | "b
   { x: 9, y: 13, kind: "pine" },
   { x: 12, y: 12, kind: "round" },
   { x: 13, y: 10, kind: "bush" },
-  { x: 13, y: 8, kind: "pine" },
+  { x: 14, y: 9, kind: "pine" },
   { x: 14, y: 6, kind: "round" },
   { x: 7, y: 9, kind: "bush" },
   { x: 11, y: 12, kind: "bush" },

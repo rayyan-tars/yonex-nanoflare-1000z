@@ -1,6 +1,6 @@
 /** One-off commands from the interface to the city view (not state). */
 export interface BusEvents {
-  focus: { target: "kitchen" | "meadow" | "service" | "results"; insetRight: number };
+  focus: { target: "kitchen" | "meadow" | "mission" | "service" | "results"; insetRight: number };
   recenter: undefined;
   /** Lunch playback: diners handled so far (in queue order). */
   serviceProgress: { processed: number };

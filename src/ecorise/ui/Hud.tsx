@@ -4,7 +4,7 @@ import { getScenario } from "../model/scenarios";
 import { prefersReducedMotion } from "../state/store";
 import { useAnimatedNumber } from "./Campus";
 import { useEco, useEcoEnv } from "./context";
-import { CoinIcon, GearIcon, HelpIcon, LeafIcon, LogoMark, PlayIcon, TargetIcon } from "./icons";
+import { ClipboardIcon, CoinIcon, GearIcon, HelpIcon, LeafIcon, LogoMark, PlayIcon, TargetIcon } from "./icons";
 
 export function TopBar() {
   const { store } = useEcoEnv();
@@ -74,6 +74,11 @@ export function Dock() {
       {selection !== "kitchen" && (
         <button type="button" className="eco-dock__btn" data-place="kitchen" onClick={() => store.actions.select("kitchen")}>
           <PlayIcon size={14} /> Plan lunch
+        </button>
+      )}
+      {selection !== "mission" && (
+        <button type="button" className="eco-dock__btn" onClick={() => store.actions.openMission()} title="Cafeteria Waste Audit (real-world mission)">
+          <ClipboardIcon size={15} /> Waste audit
         </button>
       )}
       {campus.planningHubUnlocked && !campus.planningHubBuilt && (

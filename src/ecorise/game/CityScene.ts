@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { Bus } from "../state/bus";
-import { prefersReducedMotion, type EcoState, type EcoStore, type Selection } from "../state/store";
+import { prefersReducedMotion, sustainabilityFlagRaised, type EcoState, type EcoStore, type Selection } from "../state/store";
 import { iso, type BakedTexture, type V2 } from "./art/iso";
 import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
 import { CitizenCrowd } from "./citizens";
@@ -16,7 +16,9 @@ import {
   KITCHEN,
   LAMPS,
   MEADOW,
+  MISSION_BOARD,
   NOTICEBOARD,
+  SUSTAIN_FLAG,
   TABLES,
   TRAY_RETURN,
   TREES,
@@ -36,7 +38,7 @@ export interface CitySceneDeps {
   onError(error: unknown): void;
 }
 
-type Target = "kitchen" | "noticeboard" | "meadow" | "hub";
+type Target = "kitchen" | "noticeboard" | "meadow" | "hub" | "mission";
 
 const DEPTH = { ground: -10000, decal: -9000, ui: 100000 } as const;
 /** Depth for something whose ground centre is at grid (x, y). */
@@ -74,7 +76,8 @@ export class CityScene extends Phaser.Scene {
   private cook!: Phaser.GameObjects.Image;
   private targets = new Map<Target, Phaser.GameObjects.Image>();
   private labels = new Set<Phaser.GameObjects.Text>();
-  private selRings: Record<"kitchen" | "noticeboard" | "meadow", Phaser.GameObjects.Image> = {} as never;
+  private selRings: Record<"kitchen" | "noticeboard" | "meadow" | "mission", Phaser.GameObjects.Image> = {} as never;
+  private sustain!: { pole: Phaser.GameObjects.Image; cloth: Phaser.GameObjects.Image; top: V2; raised: boolean; tween: Phaser.Tweens.Tween | null };
   private voiceProps!: Record<"rsvp" | "feedback" | "smallPlease" | "sizes", Phaser.GameObjects.Image>;
   private sparkles: Phaser.GameObjects.Image[] = [];
   private plaques: Phaser.GameObjects.Image[] = [];
@@ -199,6 +202,7 @@ export class CityScene extends Phaser.Scene {
     this.selRings.kitchen = ring(a.selKitchen, KITCHEN.x, KITCHEN.y);
     this.selRings.noticeboard = ring(a.selTile, NOTICEBOARD.x, NOTICEBOARD.y);
     this.selRings.meadow = ring(a.selMeadow, MEADOW.x, MEADOW.y);
+    this.selRings.mission = ring(a.selTile, MISSION_BOARD.x, MISSION_BOARD.y);
 
     // Expansion plot.
     const meadow = this.put(a.meadow, MEADOW.x, MEADOW.y, depthAt(MEADOW.x + MEADOW.w / 2, MEADOW.y) - 30);
@@ -245,6 +249,30 @@ export class CityScene extends Phaser.Scene {
       .setDepth(depthAt(TRAY_RETURN.x + 0.5, TRAY_RETURN.y + 0.5) + 0.2)
       .setVisible(false);
 
+    // Real-world mission: the sustainability board, and the flag it can earn.
+    const mDepth = depthAt(MISSION_BOARD.x + 0.5, MISSION_BOARD.y + 0.5);
+    const missionBoard = this.put(a.missionBoard, MISSION_BOARD.x, MISSION_BOARD.y, mDepth);
+    this.makeTarget("mission", missionBoard, this.boxHitArea(a.missionBoard, missionBoard, 1, 0.5, 42, 0, 0.35));
+    const fDepth = depthAt(SUSTAIN_FLAG.x + 0.5, SUSTAIN_FLAG.y + 0.5);
+    // A taller pole than the plaza's: scaled about its own base, so it stays on its tile.
+    const poleScale = 1.25;
+    const sustainTop = iso(SUSTAIN_FLAG.x + 0.5, SUSTAIN_FLAG.y + 0.5, 44 * poleScale);
+    this.sustain = {
+      pole: this.put(a.flagpole, SUSTAIN_FLAG.x, SUSTAIN_FLAG.y, fDepth)
+        .setScale(poleScale / a.flagpole.scale)
+        .setY(iso(SUSTAIN_FLAG.x, SUSTAIN_FLAG.y).y - 16 * (poleScale - 1))
+        .setVisible(false),
+      cloth: this.add
+        .image(sustainTop.x + 0.6, sustainTop.y, a.sustainFlag.key, a.sustainFlag.frame)
+        .setOrigin(a.sustainFlag.originX, a.sustainFlag.originY)
+        .setScale(1 / a.sustainFlag.scale)
+        .setDepth(fDepth + 0.1)
+        .setVisible(false),
+      top: sustainTop,
+      raised: false,
+      tween: null,
+    };
+
     // Council plaza.
     const board = this.put(a.noticeboard, NOTICEBOARD.x, NOTICEBOARD.y, depthAt(NOTICEBOARD.x + 0.5, NOTICEBOARD.y + 0.5));
     this.makeTarget("noticeboard", board, this.boxHitArea(a.noticeboard, board, 0.84, 0.36, 34, 0.08, 0.38));
@@ -280,6 +308,7 @@ export class CityScene extends Phaser.Scene {
     const plaque = (tex: BakedTexture, at: V2) =>
       this.add.image(at.x, at.y, tex.key, tex.frame).setOrigin(tex.originX, tex.originY).setScale(1 / tex.scale).setDepth(DEPTH.ui - 30);
     this.plaques.push(plaque(a.plaqueCafeteria, iso(KITCHEN.x + 1.2, KITCHEN.y + 1.6, 96)));
+    this.plaques.push(plaque(a.plaqueMission, iso(MISSION_BOARD.x + 0.5, MISSION_BOARD.y + 0.5, 50)));
     const plotTop = iso(MEADOW.x + MEADOW.w / 2, MEADOW.y + MEADOW.d / 2, 26);
     const hubTop = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, HUB.h + 30);
     const hubDepth = depthAt(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2);
@@ -401,6 +430,45 @@ export class CityScene extends Phaser.Scene {
     }
     // In build mode the plot ring stays lit so it is easy to find.
     if (state.phase === "building") this.selRings.meadow.setVisible(true).setAlpha(1);
+  }
+
+  /** The Campus Sustainability Flag: hidden, or raised up its pole once. */
+  private syncFlag(raised: boolean, instant: boolean) {
+    const f = this.sustain;
+    if (raised === f.raised) return;
+    f.raised = raised;
+    f.tween?.remove();
+    f.tween = null;
+    const s = 1.35 / this.art.sustainFlag.scale;
+    f.pole.setVisible(raised);
+    f.cloth.setVisible(raised).setScale(s).setPosition(f.top.x + 0.6, f.top.y);
+    if (!raised || instant || this.reduced) return;
+    // Hoist from near the ground, then a short wave and a sparkle.
+    f.cloth.setY(f.top.y + 44).setScale(s * 0.9, s);
+    f.tween = this.tweens.add({
+      targets: f.cloth,
+      y: f.top.y,
+      duration: 1600,
+      ease: "Sine.easeOut",
+      onComplete: () => {
+        f.tween = this.tweens.add({ targets: f.cloth, scaleX: { from: s, to: s * 0.84 }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+        this.sparkles.forEach((sp, i) => {
+          if (i > 4) return;
+          const a = (i / 5) * Math.PI * 2;
+          sp.setPosition(f.top.x + 10, f.top.y + 6).setVisible(true).setAlpha(1).setScale(0.18);
+          this.tweens.add({
+            targets: sp,
+            x: f.top.x + 10 + Math.cos(a) * 22,
+            y: f.top.y + 6 + Math.sin(a) * 12,
+            scale: 0.45,
+            alpha: 0,
+            duration: 750,
+            ease: "Cubic.easeOut",
+            onComplete: () => sp.setVisible(false),
+          });
+        });
+      },
+    });
   }
 
   /** Ground prep → scaffolding → the hub rises → sign and a small celebration. */
@@ -608,6 +676,7 @@ export class CityScene extends Phaser.Scene {
       }
     }
     if (state.phase !== "constructing") this.syncCampus(state);
+    this.syncFlag(sustainabilityFlagRaised(state.save), initial);
 
     if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase) {
       const sel = state.introOpen ? null : state.phase === "planning" || state.phase === "building" ? state.selection : null;
@@ -644,9 +713,10 @@ export class CityScene extends Phaser.Scene {
     rings.kitchen.setVisible(sel === "kitchen");
     rings.noticeboard.setVisible(sel === "kitchen");
     rings.meadow.setVisible(sel === "meadow");
+    rings.mission.setVisible(sel === "mission");
     this.ringTween?.remove();
     this.ringTween = null;
-    const active = [rings.kitchen, rings.noticeboard, rings.meadow].filter((r) => r.visible);
+    const active = [rings.kitchen, rings.noticeboard, rings.meadow, rings.mission].filter((r) => r.visible);
     active.forEach((r) => r.setAlpha(1));
     if (!sel || this.reduced) return;
     this.ringTween = this.tweens.add({ targets: active, alpha: { from: 1, to: 0.55 }, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
@@ -712,7 +782,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   /** Moves the view so a place sits in the part of the screen not covered by a panel. */
-  private focusOn(target: "kitchen" | "meadow" | "service" | "results", insetRight: number) {
+  private focusOn(target: "kitchen" | "meadow" | "mission" | "service" | "results", insetRight: number) {
     const cam = this.cameras.main;
     const r = this.deps.resolution;
     const world =
@@ -722,11 +792,13 @@ export class CityScene extends Phaser.Scene {
           ? SERVICE_VIEW
           : target === "results"
             ? RESULTS_VIEW
-            : iso(MEADOW.x + MEADOW.w / 2 - 0.6, MEADOW.y + MEADOW.d / 2 + 0.6, 16);
+            : target === "mission"
+              ? iso(MISSION_BOARD.x + 0.2, MISSION_BOARD.y + 0.3, 20)
+              : iso(MEADOW.x + MEADOW.w / 2 - 0.6, MEADOW.y + MEADOW.d / 2 + 0.6, 16);
     const { w, h } = this.cssSize();
     const freeW = Math.max(240, w - insetRight);
     const zc = cam.zoom;
-    if (target === "kitchen" || target === "meadow") {
+    if (target === "kitchen" || target === "meadow" || target === "mission") {
       const sx = (world.x - cam.worldView.x) * (zc / r);
       const sy = (world.y - cam.worldView.y) * (zc / r);
       if (sx > freeW * 0.25 && sx < freeW * 0.75 && sy > h * 0.25 && sy < h * 0.78) return;
@@ -774,6 +846,7 @@ export class CityScene extends Phaser.Scene {
       const actions = this.deps.store.actions;
       if (hit === "kitchen" || hit === "noticeboard") actions.select("kitchen");
       else if (hit === "meadow" || hit === "hub") actions.select("meadow");
+      else if (hit === "mission") actions.openMission();
       else if (state.selection) actions.clearSelection();
     };
     this.input.on(Phaser.Input.Events.POINTER_UP, end);

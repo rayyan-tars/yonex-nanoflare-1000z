@@ -6,7 +6,7 @@ import { forecastRange } from "../model/planning";
 import { getScenario } from "../model/scenarios";
 import { PLANNING_HUB_COST, planningHubRefusal } from "../state/store";
 import { useEco, useEcoEnv } from "./context";
-import { CoinIcon, LockIcon, OfficeIcon, PlayIcon } from "./icons";
+import { ClipboardIcon, CoinIcon, LockIcon, OfficeIcon, PlayIcon } from "./icons";
 import { SidePanel } from "./SidePanel";
 
 /** Smoothly counts a number to its new value (instant with reduced motion). */
@@ -196,6 +196,19 @@ export function BuiltCard() {
         </div>
       </div>
       <p className="eco-small eco-muted">Still a range: the hub improves information, it doesn&rsquo;t reveal the answer.</p>
+      <button
+        type="button"
+        className="eco-bridge eco-bridge--btn"
+        onClick={() => {
+          store.actions.tryAgain();
+          store.actions.openMission("school");
+        }}
+      >
+        <ClipboardIcon size={18} />
+        <span>
+          <strong>Try it for real:</strong> the Cafeteria Waste Audit applies the same idea at your school.
+        </span>
+      </button>
     </SidePanel>
   );
 }

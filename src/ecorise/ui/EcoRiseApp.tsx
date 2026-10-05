@@ -12,6 +12,7 @@ import { GameCanvas } from "./GameCanvas";
 import { Dock, TopBar } from "./Hud";
 import { BuildCard, BuildPrompt, BuiltCard, ConstructionHud, PlotInfo } from "./Campus";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
+import { MissionPanel } from "./MissionPanel";
 import { ResultsPanel, ServiceHud } from "./Round";
 
 const LOAD_NOTICES: Record<string, string | undefined> = {
@@ -166,6 +167,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
               <AnimatePresence mode="wait">
                 {phase === "planning" && selection === "kitchen" && <CouncilPanel key="kitchen" />}
                 {phase === "planning" && selection === "meadow" && <PlotInfo key="meadow" />}
+                {phase === "planning" && selection === "mission" && <MissionPanel key="mission" />}
                 {phase === "building" && selection === "meadow" && <BuildCard key="build" />}
                 {phase === "built" && <BuiltCard key="built" />}
                 {phase === "results" && round && <ResultsPanel key={`results-${round.attemptId}`} round={round} />}

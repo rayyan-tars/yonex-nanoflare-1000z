@@ -229,7 +229,7 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
 
   return (
     <SidePanel
-      eyebrow={`${def.dayLabel} lunch · results`}
+      eyebrow={`${def.dayLabel} lunch · simulated results`}
       title={report.stars.count === 3 ? "A lunch to be proud of" : report.player.fed ? "Everyone ate" : "Not everyone ate"}
       onClose={store.actions.tryAgain}
       closeLabel="Close results and plan again"

@@ -1,6 +1,7 @@
 import { BALANCE, REWARDS } from "../model/config";
 import { NO_VOICE, voiceTokensUsed } from "../model/planning";
 import { EMPTY_LEDGER, type RewardLedger, type ScenarioLedgerEntry } from "../model/rewards";
+import { validAuditRecord, type AuditRecord } from "../model/audit";
 import { DEFAULT_SCENARIO_ID, findScenarioDefinition } from "../model/scenarios";
 import { sanitizePortions } from "../model/simulation";
 import type { KitchenPolicy, StudentVoice } from "../model/types";
@@ -30,7 +31,20 @@ export interface SaveData {
     /** Campus progression. A building is only ever built once. */
     campus: CampusState;
   };
+  /**
+   * Real-world mission records. Kept apart from game progress, and the
+   * school record apart from the sample: sample numbers are never shown as
+   * school results.
+   */
+  mission: MissionSave;
 }
+
+export interface MissionSave {
+  school: AuditRecord | null;
+  sample: AuditRecord | null;
+}
+
+export const DEFAULT_MISSION: MissionSave = { school: null, sample: null };
 
 export interface CampusState {
   planningHubUnlocked: boolean;
@@ -61,6 +75,7 @@ export function defaultSave(): SaveData {
     scenarioId: DEFAULT_SCENARIO_ID,
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
     progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null, campus: { ...DEFAULT_CAMPUS } },
+    mission: { ...DEFAULT_MISSION },
   };
 }
 
@@ -106,6 +121,7 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     ),
     draft: d.draft,
     progress: d.progress,
+    mission: d.mission,
   };
 
   const draft = isRecord(raw.draft) ? raw.draft : {};
@@ -161,6 +177,15 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     last: progress.last === undefined || progress.last === null ? null : fix(validLast(progress.last), progress.last as LastRound, null),
     campus: progress.campus === undefined ? { ...DEFAULT_CAMPUS } : fix(validCampus(progress.campus), progress.campus as CampusState, { ...DEFAULT_CAMPUS }),
   };
+
+  // Added in Phase 3: absent is normal; each record is checked on its own.
+  if (raw.mission !== undefined) {
+    const mission = isRecord(raw.mission) ? raw.mission : {};
+    const record = (v: unknown, source: "school" | "sample") =>
+      v === undefined || v === null ? null : fix(validAuditRecord(v, source), v as AuditRecord, null);
+    out.mission = { school: record(mission.school, "school"), sample: record(mission.sample, "sample") };
+    if (!isRecord(raw.mission)) repaired = true;
+  }
 
   return { data: out, repaired };
 }

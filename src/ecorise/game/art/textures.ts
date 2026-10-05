@@ -750,6 +750,68 @@ export function flagClothSketch(): Sketch {
   return s;
 }
 
+/** Sustainability (mission) board: where the real-world audit lives. */
+export function missionBoardSketch(fonts: ArtFonts): Sketch {
+  const s = new Sketch();
+  const y = 0.58;
+  for (const x of [0.1, 0.9]) s.box(x - 0.045, y - 0.045, 0, 0.09, 0.09, 40, wallShades(PAL.woodDark));
+  // Panel and inset cork.
+  s.face([[0.06, y, 12], [0.94, y, 12], [0.94, y, 38], [0.06, y, 38]], PAL.forestMid, edge(0.55));
+  s.face([[0.1, y + 0.001, 14], [0.9, y + 0.001, 14], [0.9, y + 0.001, 31], [0.1, y + 0.001, 31]], 0xd6b98a, null);
+  // Roof cap.
+  s.face([[0.0, y - 0.14, 40], [1.0, y - 0.14, 40], [1.0, y + 0.14, 37], [0.0, y + 0.14, 37]], PAL.forest, edge(0.45));
+  s.face([[0.0, y + 0.14, 37], [1.0, y + 0.14, 37], [1.0, y + 0.14, 35.6], [0.0, y + 0.14, 35.6]], PAL.gold, null);
+  // Title strip.
+  s.custom([-40, -60, 40, 0], (ctx) => {
+    const at = iso(0.5, y + 0.002, 32.4);
+    wallText(ctx, "WASTE AUDIT", at, { size: 3.6, color: "#f3ecdd", font: fonts.body, weight: 700, tracking: 0.5, align: "center" });
+  });
+  // Results sheet with falling bars.
+  s.face([[0.14, y + 0.002, 16], [0.48, y + 0.002, 16], [0.48, y + 0.002, 29], [0.14, y + 0.002, 29]], 0xfbf6ea, edge(0.3, 0.5));
+  [9, 7, 5].forEach((h, i) => {
+    const x = 0.19 + i * 0.09;
+    s.face([[x, y + 0.003, 18], [x + 0.06, y + 0.003, 18], [x + 0.06, y + 0.003, 18 + h], [x, y + 0.003, 18 + h]], i === 2 ? PAL.forestMid : 0xc28a4c, null);
+  });
+  // Checklist sheet.
+  s.face([[0.54, y + 0.002, 16.5], [0.84, y + 0.002, 16.5], [0.84, y + 0.002, 29], [0.54, y + 0.002, 29]], 0xffffff, edge(0.3, 0.5));
+  for (let i = 0; i < 4; i++) {
+    const z = 26.5 - i * 2.8;
+    const done = i < 2;
+    s.line([iso(0.57, y + 0.003, z), iso(0.6, y + 0.003, z - (done ? 1 : 0))], done ? PAL.forestMid : 0xb7a993, 0.8);
+    s.line([iso(0.63, y + 0.003, z), iso(0.8, y + 0.003, z)], 0x9a8b7a, 0.6, 0.8);
+  }
+  const pin = iso(0.31, y, 29);
+  s.circle(pin.x, pin.y, 1.2, { fill: PAL.terracotta });
+  const pin2 = iso(0.69, y, 29);
+  s.circle(pin2.x, pin2.y, 1.2, { fill: PAL.gold });
+  // A small kitchen scale on the ground: measuring comes first.
+  s.box(0.62, 0.74, 0, 0.26, 0.2, 4, wallShades(PAL.steel));
+  s.box(0.6, 0.72, 4, 0.3, 0.24, 1, wallShades(0xe6e1d6));
+  return s;
+}
+
+/** Campus Sustainability Flag cloth: a leaf on forest green. */
+export function sustainFlagSketch(): Sketch {
+  const s = new Sketch();
+  s.poly([{ x: 0, y: 0 }, { x: 20, y: 2 }, { x: 20, y: 14 }, { x: 0, y: 12 }], { fill: 0x3f7a45, ...edge(0.4, 0.7) });
+  s.poly([{ x: 0, y: 9.5 }, { x: 20, y: 11.5 }, { x: 20, y: 14 }, { x: 0, y: 12 }], { fill: PAL.gold });
+  s.custom([2, 0, 18, 12], (ctx) => {
+    ctx.fillStyle = "#f3ecdd";
+    ctx.beginPath();
+    ctx.moveTo(6.5, 8.5);
+    ctx.bezierCurveTo(6.5, 3.5, 11, 2.2, 14.5, 2.6);
+    ctx.bezierCurveTo(14.8, 6.4, 12, 9.2, 6.5, 8.5);
+    ctx.fill();
+    ctx.strokeStyle = "#3f7a45";
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(7.2, 8);
+    ctx.lineTo(13, 3.6);
+    ctx.stroke();
+  });
+  return s;
+}
+
 export function tableSketch(): Sketch {
   const s = new Sketch();
   // Benches either side of the table.
@@ -980,7 +1042,7 @@ export function markerSketch(): Sketch {
 }
 
 /** Floating name plaque with a small icon. Origin at the pointer tip. */
-export function plaqueSketch(text: string, icon: "cafeteria" | "lock" | "plus" | "hub", fonts: ArtFonts, gold = false): Sketch {
+export function plaqueSketch(text: string, icon: "cafeteria" | "lock" | "plus" | "hub" | "audit", fonts: ArtFonts, gold = false): Sketch {
   const s = new Sketch();
   const probe = document.createElement("canvas").getContext("2d")!;
   probe.font = `600 8px ${fonts.body}`;
@@ -1034,6 +1096,15 @@ export function plaqueSketch(text: string, icon: "cafeteria" | "lock" | "plus" |
       ctx.lineTo(ix + 3, iy);
       ctx.moveTo(ix, iy - 3);
       ctx.lineTo(ix, iy + 3);
+      ctx.stroke();
+    } else if (icon === "audit") {
+      // Clipboard with a tick.
+      ctx.strokeRect(ix - 2.8, iy - 3.2, 5.6, 7);
+      ctx.fillRect(ix - 1.4, iy - 4.2, 2.8, 1.6);
+      ctx.beginPath();
+      ctx.moveTo(ix - 1.5, iy + 0.6);
+      ctx.lineTo(ix - 0.3, iy + 1.8);
+      ctx.lineTo(ix + 1.7, iy - 0.8);
       ctx.stroke();
     } else {
       // Bar chart: planning data.
@@ -1785,6 +1856,9 @@ export interface ArtCatalog {
   lamp: BakedTexture;
   flagpole: BakedTexture;
   flagCloth: BakedTexture;
+  missionBoard: BakedTexture;
+  sustainFlag: BakedTexture;
+  plaqueMission: BakedTexture;
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -1851,6 +1925,9 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     lamp: b("lamp", lampSketch()),
     flagpole: b("flagpole", flagpoleSketch()),
     flagCloth: b("flag-cloth", flagClothSketch()),
+    missionBoard: b("mission-board", missionBoardSketch(fonts), 3),
+    sustainFlag: b("sustain-flag", sustainFlagSketch(), 3),
+    plaqueMission: b("plaque-mission", plaqueSketch("Waste Audit", "audit", fonts), 3),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

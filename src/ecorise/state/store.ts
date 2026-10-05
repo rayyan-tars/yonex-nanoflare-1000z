@@ -1,3 +1,20 @@
+import {
+  chooseChange,
+  newAuditRecord,
+  recordBaseline,
+  recordFollowUp,
+  setCauses,
+  setDiscussed,
+  submitAudit,
+  verifyAuditDemo,
+  type AuditCause,
+  type AuditChange,
+  type AuditMeasurement,
+  type AuditRecord,
+  type AuditRefusal,
+  type AuditResult,
+  type AuditSource,
+} from "../model/audit";
 import { toggleVoiceAction } from "../model/planning";
 import { computeRoundReport, type RoundReport } from "../model/report";
 import { creditAttempt, type CreditReason } from "../model/rewards";
@@ -36,7 +53,21 @@ export function planningHubRefusal(state: EcoState): BuildRefusal | null {
   return null;
 }
 
-export type Selection = "kitchen" | "meadow" | null;
+export type Selection = "kitchen" | "meadow" | "mission" | null;
+
+/** The Sustainability Flag flies once a real (school) audit is verified. */
+export function sustainabilityFlagRaised(save: SaveData): boolean {
+  const r = save.mission.school;
+  return !!r && (r.status === "verified" || r.status === "measured");
+}
+
+const AUDIT_REFUSALS: Record<AuditRefusal, string> = {
+  "wrong-status": "That step isn't available yet.",
+  "invalid-measurement": "Check the numbers: meals served must be a whole number above 0, and grams can't be negative.",
+  "sample-is-fixed": "The sample record can't be edited. Start a real audit to enter your school's numbers.",
+  incomplete: "Finish steps 1 to 4 first.",
+  "method-not-confirmed": "Confirm the follow-up was measured the same way as the baseline.",
+};
 export type Overlay = "about" | "settings" | "reset-confirm" | null;
 export type BootStatus = "loading" | "ready" | "error";
 /**
@@ -73,6 +104,8 @@ export interface EcoState {
   systemReducedMotion: boolean;
   storage: { available: boolean; loadStatus: LoadStatus; lastWriteFailed: boolean };
   notice: { id: number; text: string } | null;
+  /** Which mission record the mission card shows (session only). */
+  missionView: AuditSource;
 }
 
 type Listener = () => void;
@@ -100,6 +133,17 @@ export interface EcoActions {
   /** Buys and starts building the Planning Hub. Pays exactly once. */
   buildPlanningHub(): void;
   finishConstruction(): void;
+  /** Real-world mission. Every change goes through the audit rules. */
+  openMission(view?: AuditSource): void;
+  startAudit(source: AuditSource): void;
+  discardAudit(source: AuditSource): void;
+  auditBaseline(m: AuditMeasurement): boolean;
+  auditCauses(causes: AuditCause[]): void;
+  auditDiscussed(discussed: boolean): void;
+  auditChange(change: AuditChange | null): void;
+  submitAudit(): void;
+  verifyAuditDemo(): void;
+  auditFollowUp(m: AuditMeasurement, sameMethod: boolean): boolean;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
   setSystemReducedMotion(value: boolean): void;
@@ -141,6 +185,7 @@ export function createEcoStore(options: {
       lastWriteFailed: false,
     },
     notice: null,
+    missionView: options.initialSave.mission.school || !options.initialSave.mission.sample ? "school" : "sample",
   };
   const listeners = new Set<Listener>();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -169,6 +214,28 @@ export function createEcoStore(options: {
 
   const updateSave = (fn: (s: SaveData) => SaveData) => set({ save: fn(state.save) }, true);
   const notify = (text: string) => set({ notice: { id: ++noticeId, text } }, false);
+
+  /** Applies one audit rule to the record on show; refusals become a notice. */
+  const applyAudit = (fn: (r: AuditRecord) => AuditResult, persistImmediately = false): boolean => {
+    const source = state.missionView;
+    const record = state.save.mission[source];
+    if (!record) return false;
+    const result = fn(record);
+    if (!result.ok) {
+      notify(AUDIT_REFUSALS[result.reason]);
+      return false;
+    }
+    const save = { ...state.save, mission: { ...state.save.mission, [source]: result.record } };
+    if (persistImmediately) {
+      // Status changes are written at once so a reload never loses them.
+      state = { ...state, save };
+      listeners.forEach((l) => l());
+      persistNow();
+    } else {
+      set({ save }, true);
+    }
+    return true;
+  };
 
   function createActions(): EcoActions {
     return {
@@ -325,6 +392,44 @@ export function createEcoStore(options: {
         set({ phase: "built" }, false);
       },
 
+      openMission: (view?: AuditSource) => {
+        if (state.introOpen || state.phase !== "planning") return;
+        set({ selection: "mission", overlay: null, missionView: view ?? state.missionView }, false);
+      },
+      startAudit: (source: AuditSource) => {
+        if (state.save.mission[source]) {
+          set({ missionView: source }, false);
+          return;
+        }
+        state = {
+          ...state,
+          missionView: source,
+          save: { ...state.save, mission: { ...state.save.mission, [source]: newAuditRecord(source) } },
+        };
+        listeners.forEach((l) => l());
+        persistNow();
+      },
+      discardAudit: (source: AuditSource) => {
+        const r = state.save.mission[source];
+        if (!r) return;
+        // A submitted school audit is a record of real work: it stays.
+        if (source === "school" && r.status !== "proposed") return;
+        state = {
+          ...state,
+          missionView: "school",
+          save: { ...state.save, mission: { ...state.save.mission, [source]: null } },
+        };
+        listeners.forEach((l) => l());
+        persistNow();
+      },
+      auditBaseline: (m: AuditMeasurement) => applyAudit((r) => recordBaseline(r, m), true),
+      auditCauses: (causes: AuditCause[]) => void applyAudit((r) => setCauses(r, causes)),
+      auditDiscussed: (discussed: boolean) => void applyAudit((r) => setDiscussed(r, discussed)),
+      auditChange: (change: AuditChange | null) => void applyAudit((r) => chooseChange(r, change)),
+      submitAudit: () => void applyAudit(submitAudit, true),
+      verifyAuditDemo: () => void applyAudit(verifyAuditDemo, true),
+      auditFollowUp: (m: AuditMeasurement, sameMethod: boolean) => applyAudit((r) => recordFollowUp(r, m, sameMethod), true),
+
       setMotion: (motion: MotionSetting) =>
         updateSave((s) => ({ ...s, settings: { ...s.settings, motion } })),
       setQuality: (quality: QualitySetting) =>
@@ -349,6 +454,7 @@ export function createEcoStore(options: {
             selection: null,
             overlay: null,
             storage: { ...state.storage, loadStatus: "fresh" },
+            missionView: "school",
           },
           false,
         );

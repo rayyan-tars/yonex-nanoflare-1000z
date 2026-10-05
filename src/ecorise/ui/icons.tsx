@@ -202,3 +202,39 @@ export const ForkIcon = (p: IconProps) => (
     <path d="M7 3.5v17M5 3.5v5a2 2 0 0 0 4 0v-5M16.5 20.5V3.5c-2 1-3 3.5-3 7 0 1.6 1.3 2.5 3 2.5" />
   </Icon>
 );
+export const ScaleIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5 9.5h14l-1.2 9a1.5 1.5 0 0 1-1.5 1.3H7.7a1.5 1.5 0 0 1-1.5-1.3Z" />
+    <path d="M8 9.5a4 4 0 0 1 8 0M12 9.5l1.8-2.4" />
+  </Icon>
+);
+export const SearchIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="10.5" cy="10.5" r="6" />
+    <path d="m15 15 5 5" />
+  </Icon>
+);
+export const FlaskIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9.5 3.5h5M10.5 3.5v5.2L5 18.2A1.5 1.5 0 0 0 6.3 20.5h11.4a1.5 1.5 0 0 0 1.3-2.3l-5.5-9.5V3.5" />
+    <path d="M7.5 14.5h9" />
+  </Icon>
+);
+export const RepeatIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4.5 11.5a7 7 0 0 1 12.3-4.6L19 9.5M19 4.5v5h-5" />
+    <path d="M19.5 12.5a7 7 0 0 1-12.3 4.6L5 14.5M5 19.5v-5h5" />
+  </Icon>
+);
+export const FlagIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M5.5 21V3.5" />
+    <path d="M5.5 4.5h11.5l-2.5 4 2.5 4H5.5" />
+  </Icon>
+);
+export const ShieldIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3.5 5 6v5.5c0 4.3 3 7.6 7 9 4-1.4 7-4.7 7-9V6Z" />
+    <path d="m9 12 2.2 2.2L15.5 10" />
+  </Icon>
+);

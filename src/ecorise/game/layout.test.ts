@@ -6,7 +6,9 @@ import {
   KITCHEN,
   LAMPS,
   MEADOW,
+  MISSION_BOARD,
   QUEUE_SLOTS,
+  SUSTAIN_FLAG,
   SERVE_POINT,
   TRAY_RETURN_APPROACH,
   TREES,
@@ -56,7 +58,7 @@ describe("city layout", () => {
   });
 
   it("scenery sits on grass, not on paths, buildings or water", () => {
-    for (const p of [...TREES, ...LAMPS, ...FLOWERBEDS]) {
+    for (const p of [...TREES, ...LAMPS, ...FLOWERBEDS, MISSION_BOARD, SUSTAIN_FLAG]) {
       expect(tileAt(p.x, p.y), `${p.x},${p.y}`).toBe("grass");
       expect(occupiedByBuilding(p.x, p.y)).toBe(false);
     }
@@ -73,5 +75,10 @@ describe("city layout", () => {
       for (let x = MEADOW.x; x < MEADOW.x + MEADOW.w; x++) expect(tileAt(x, y)).toBe("meadow");
     }
     expect(isWalkable(12, MEADOW.y + MEADOW.d)).toBe(true);
+  });
+
+  it("the mission board and flag have their own tiles", () => {
+    const props = [...TREES, ...LAMPS, ...FLOWERBEDS].map((p) => `${p.x},${p.y}`);
+    for (const p of [MISSION_BOARD, SUSTAIN_FLAG]) expect(props).not.toContain(`${p.x},${p.y}`);
   });
 });
