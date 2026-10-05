@@ -4,6 +4,7 @@ import { getScenario } from "../model/scenarios";
 import { prefersReducedMotion } from "../state/store";
 import { useAnimatedNumber } from "./Campus";
 import { useEco, useEcoEnv } from "./context";
+import { PlaytestChip } from "./Playtest";
 import { ClipboardIcon, CoinIcon, GearIcon, HelpIcon, LeafIcon, LogoMark, PlayIcon, TargetIcon } from "./icons";
 
 export function TopBar() {
@@ -26,6 +27,7 @@ export function TopBar() {
       </div>
       {!serving && (
         <div className="eco-bar eco-status">
+          <PlaytestChip />
           <span className="eco-chip">
             {def.dayLabel.slice(0, 3)}, Week 1
           </span>

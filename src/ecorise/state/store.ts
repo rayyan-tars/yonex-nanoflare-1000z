@@ -26,6 +26,22 @@ import { getScenario } from "../model/scenarios";
 import { sanitizePortions } from "../model/simulation";
 import { NO_UPGRADES, type StudentVoiceAction, type Upgrades } from "../model/types";
 import {
+  abandonSession,
+  addDemoSessions,
+  clearDemoSessions,
+  emptyPlaytests,
+  finishSession,
+  recordFirstResults,
+  recordHubBuilt,
+  recordMissionOpened,
+  recordOnboarding,
+  recordRound,
+  startSession,
+  writePlaytests,
+  type PlaytestAnswers,
+  type PlaytestData,
+} from "./playtest";
+import {
   clearEcoRiseData,
   defaultSave,
   type LoadStatus,
@@ -73,7 +89,15 @@ const AUDIT_REFUSALS: Record<AuditRefusal, string> = {
   "not-tested": "Test the change at a later lunch first.",
   "method-not-confirmed": "Confirm the follow-up was measured the same way as the baseline.",
 };
-export type Overlay = "about" | "settings" | "reset-confirm" | null;
+export type Overlay =
+  | "about"
+  | "settings"
+  | "reset-confirm"
+  | "demo-reset"
+  | "playtest-start"
+  | "playtest-finish"
+  | "playtest-summary"
+  | null;
 export type BootStatus = "loading" | "ready" | "error";
 /**
  * planning → serving → results → (building → constructing → built) → planning
@@ -111,6 +135,8 @@ export interface EcoState {
   notice: { id: number; text: string } | null;
   /** Which mission record the mission card shows (session only). */
   missionView: AuditSource;
+  /** Anonymous playtest records, stored apart from the game save. */
+  playtest: PlaytestData;
 }
 
 type Listener = () => void;
@@ -151,6 +177,18 @@ export interface EcoActions {
   submitAudit(): void;
   verifyAuditDemo(): void;
   auditFollowUp(m: AuditMeasurement, sameMethod: boolean): boolean;
+  /** Restarts the game from a clean Monday and begins an anonymous playtest session. */
+  startPlaytest(): void;
+  /** Saves the three answers and completes the session; false if it can't count. */
+  submitPlaytest(answers: PlaytestAnswers): boolean;
+  /** Ends the session without counting it. */
+  abandonPlaytest(): void;
+  /** Removes playtest records only; game progress is untouched. */
+  clearPlaytests(): void;
+  addDemoPlaytests(): void;
+  clearDemoPlaytests(): void;
+  /** Clean filming state: fresh Monday, settings and playtest records kept. */
+  resetDemo(): void;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
   setSystemReducedMotion(value: boolean): void;
@@ -175,7 +213,11 @@ export function createEcoStore(options: {
   loadStatus: LoadStatus;
   storage: StorageLike | null;
   systemReducedMotion: boolean;
+  initialPlaytest?: PlaytestData;
+  /** Clock for playtest timing (injectable for tests). */
+  now?: () => number;
 }): EcoStore {
+  const now = options.now ?? (() => Date.now());
   let state: EcoState = {
     save: options.initialSave,
     upgrades: upgradesOf(options.initialSave),
@@ -193,6 +235,7 @@ export function createEcoStore(options: {
     },
     notice: null,
     missionView: options.initialSave.mission.school || !options.initialSave.mission.demo ? "school" : "demo",
+    playtest: options.initialPlaytest ?? emptyPlaytests(),
   };
   const listeners = new Set<Listener>();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -221,6 +264,36 @@ export function createEcoStore(options: {
 
   const updateSave = (fn: (s: SaveData) => SaveData) => set({ save: fn(state.save) }, true);
   const notify = (text: string) => set({ notice: { id: ++noticeId, text } }, false);
+
+  /** Updates playtest records and writes them straight away (they are small). */
+  const updatePlaytest = (fn: (d: PlaytestData) => PlaytestData) => {
+    const next = fn(state.playtest);
+    if (next === state.playtest) return;
+    state = { ...state, playtest: next };
+    listeners.forEach((l) => l());
+    writePlaytests(options.storage, next);
+  };
+
+  /** A clean Monday, keeping settings. Used for filming and before each playtest. */
+  const freshGame = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    const save: SaveData = { ...defaultSave(), settings: state.save.settings };
+    state = {
+      ...state,
+      save,
+      upgrades: upgradesOf(save),
+      phase: "planning",
+      round: null,
+      introOpen: true,
+      selection: null,
+      overlay: null,
+      missionView: "school",
+      notice: null,
+    };
+    listeners.forEach((l) => l());
+    persistNow();
+  };
 
   /** Applies one audit rule to the record on show; refusals become a notice. */
   const applyAudit = (fn: (r: AuditRecord) => AuditResult, persistImmediately = false): boolean => {
@@ -254,6 +327,7 @@ export function createEcoStore(options: {
         // The opening card leads straight into planning the day.
         set({ introOpen: false, selection: state.phase === "planning" ? "kitchen" : state.selection }, false);
         updateSave((s) => ({ ...s, onboardingDone: true }));
+        updatePlaytest(recordOnboarding);
       },
       showIntro: () => {
         if (state.phase === "serving" || state.phase === "constructing") return;
@@ -359,10 +433,23 @@ export function createEcoStore(options: {
         };
         listeners.forEach((l) => l());
         persistNow();
+        updatePlaytest((d) =>
+          recordRound(d, {
+            voice: { ...save.draft.voice },
+            portionsPrepared: save.draft.policy.portionsPrepared,
+            smallServings: save.draft.policy.offerSmallServings,
+            everyoneFed: report.player.fed,
+            studentsFed: res.hotMeals,
+            attendance: res.attendance,
+            wastePortionsPerMeal: report.player.waste.perMeal,
+            stars: report.stars.count,
+          }),
+        );
       },
       finishService: () => {
         if (state.phase !== "serving") return;
         set({ phase: "results" }, false);
+        updatePlaytest((d) => recordFirstResults(d, now()));
       },
       tryAgain: () => {
         if (state.phase === "serving" || state.phase === "constructing") return;
@@ -393,6 +480,7 @@ export function createEcoStore(options: {
         state = { ...state, save: next, upgrades: upgradesOf(next), phase: "constructing", selection: null, overlay: null };
         listeners.forEach((l) => l());
         persistNow();
+        updatePlaytest(recordHubBuilt);
       },
       finishConstruction: () => {
         if (state.phase !== "constructing") return;
@@ -402,6 +490,7 @@ export function createEcoStore(options: {
       openMission: (view?: AuditSource) => {
         if (state.introOpen || state.phase !== "planning") return;
         set({ selection: "mission", overlay: null, missionView: view ?? state.missionView }, false);
+        updatePlaytest(recordMissionOpened);
       },
       startAudit: (source: AuditSource) => {
         if (state.save.mission[source]) {
@@ -439,6 +528,47 @@ export function createEcoStore(options: {
       verifyAuditDemo: () => void applyAudit(verifyAuditDemo, true),
       auditFollowUp: (m: AuditMeasurement, sameMethod: boolean) => applyAudit((r) => recordFollowUp(r, m, sameMethod), true),
 
+      startPlaytest: () => {
+        if (state.phase === "serving" || state.phase === "constructing") return;
+        freshGame();
+        updatePlaytest((d) => startSession(d, now()));
+        notify(`Playtest #${state.playtest.activeId} started. Hand over to the player.`);
+      },
+      submitPlaytest: (answers: PlaytestAnswers) => {
+        const result = finishSession(state.playtest, answers, now());
+        if (!result.ok) {
+          notify(
+            result.reason === "no-lunch"
+              ? "Serve at least one lunch before finishing, or end without saving."
+              : result.reason === "invalid-answers"
+                ? "Choose how easy EcoRise was to understand (1 to 5)."
+                : "No playtest is running.",
+          );
+          return false;
+        }
+        const id = state.playtest.activeId;
+        updatePlaytest(() => result.data);
+        set({ overlay: null }, false);
+        notify(`Playtest #${id} saved. Thank you!`);
+        return true;
+      },
+      abandonPlaytest: () => {
+        updatePlaytest((d) => abandonSession(d, now()));
+        set({ overlay: null }, false);
+      },
+      clearPlaytests: () => {
+        updatePlaytest(() => emptyPlaytests());
+        notify("Playtest data cleared. Game progress was not changed.");
+      },
+      addDemoPlaytests: () => updatePlaytest((d) => addDemoSessions(d, now())),
+      clearDemoPlaytests: () => updatePlaytest(clearDemoSessions),
+      resetDemo: () => {
+        if (state.phase === "serving" || state.phase === "constructing") return;
+        updatePlaytest((d) => abandonSession(d, now()));
+        freshGame();
+        notify("Demo reset: a clean Monday. Playtest records were kept.");
+      },
+
       setMotion: (motion: MotionSetting) =>
         updateSave((s) => ({ ...s, settings: { ...s.settings, motion } })),
       setQuality: (quality: QualitySetting) =>
@@ -464,6 +594,7 @@ export function createEcoStore(options: {
             overlay: null,
             storage: { ...state.storage, loadStatus: "fresh" },
             missionView: "school",
+            playtest: emptyPlaytests(),
           },
           false,
         );

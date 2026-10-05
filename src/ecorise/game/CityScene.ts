@@ -430,7 +430,9 @@ export class CityScene extends Phaser.Scene {
   /** Shows the plot, the build prompt or the finished hub to match the save. */
   private syncCampus(state: EcoState) {
     const c = this.campus;
-    const { planningHubBuilt: built, planningHubUnlocked: unlocked } = state.save.progress.campus;
+    const { planningHubBuilt: built, planningHubUnlocked: saved } = state.save.progress.campus;
+    // The unlock is saved when lunch is served, but revealed only with the results.
+    const unlocked = saved && !(state.phase === "serving" && state.round?.unlockedPlanningHub);
     c.meadow.setVisible(!built);
     c.grounds.setVisible(built).setAlpha(1);
     c.hub.setVisible(built).setAlpha(1).setCrop();
@@ -933,7 +935,8 @@ export class CityScene extends Phaser.Scene {
       if (this.debugTimer > 500) {
         this.debugTimer = 0;
         const r = this.game.renderer.type === Phaser.WEBGL ? "WebGL" : "Canvas";
-        this.deps.debugEl.textContent = `${this.game.loop.actualFps.toFixed(0)} fps · ${r} · ${this.scale.width}×${this.scale.height}px · ${this.children.length} objects · ${this.tweens.getTweens().length} tweens`;
+        const css = this.cssSize();
+        this.deps.debugEl.textContent = `${this.game.loop.actualFps.toFixed(0)} fps · ${r} · ${Math.round(css.w)}×${Math.round(css.h)} css @${this.deps.resolution}x (${this.scale.width}×${this.scale.height}px) · ${this.deps.quality} · ${this.children.length} objects`;
       }
     }
   }

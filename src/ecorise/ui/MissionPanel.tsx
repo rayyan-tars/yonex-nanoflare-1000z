@@ -162,7 +162,7 @@ function MissionIntro() {
           <ClipboardIcon size={16} />
         </span>
         <span>
-          {hubBuilt ? "Your Planning Hub" : "In the game, the Planning Hub"} shows better information reduces planning mistakes.{" "}
+          In the simulation, {hubBuilt ? "your" : "the"} Planning Hub uses better information to cut planning mistakes.{" "}
           <strong>The audit checks whether your real cafeteria has this problem.</strong>
         </span>
       </div>
@@ -584,6 +584,7 @@ function DiscussStep({ record }: { record: AuditRecord }) {
       <button type="button" className="eco-btn eco-btn--primary" disabled={!readyToSubmit(record)} onClick={store.actions.submitAudit}>
         Submit for staff check
       </button>
+      <p className="eco-next-hint">After approval, test the change during a future lunch and measure again.</p>
     </section>
   );
 }

@@ -272,7 +272,7 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
       {round.unlockedPlanningHub && (
         <p className="eco-unlock" role="status">
           <strong>Planning Hub unlocked</strong>
-          <span>Better lunch data can reduce uncertainty.</span>
+          <span>Better lunch data can reduce uncertainty. Build it with your Eco Credits.</span>
         </p>
       )}
 

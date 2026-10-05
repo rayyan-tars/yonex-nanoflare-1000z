@@ -4,6 +4,7 @@ import { AnimatePresence, MotionConfig } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { createBus } from "../state/bus";
 import { getBrowserStorage, loadSave } from "../state/persistence";
+import { loadPlaytests } from "../state/playtest";
 import { createEcoStore, prefersReducedMotion, type Selection } from "../state/store";
 import { BootError, BootSplash } from "./BootScreens";
 import { CouncilPanel } from "./CouncilPanel";
@@ -13,6 +14,7 @@ import { Dock, TopBar } from "./Hud";
 import { BuildCard, BuildPrompt, BuiltCard, ConstructionHud, PlotInfo } from "./Campus";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
 import { MissionPanel } from "./MissionPanel";
+import { DemoResetDialog, PlaytestFinishDialog, PlaytestStartDialog, PlaytestSummaryDialog } from "./Playtest";
 import { ResultsPanel, ServiceHud } from "./Round";
 
 const LOAD_NOTICES: Record<string, string | undefined> = {
@@ -44,6 +46,7 @@ function createEnv(): EcoEnv & { fonts: Fonts } {
     loadStatus: loaded.status,
     storage,
     systemReducedMotion: mq.matches,
+    initialPlaytest: loadPlaytests(storage),
   });
   const notice = LOAD_NOTICES[loaded.status];
   if (notice) store.actions.notify(notice);
@@ -181,6 +184,10 @@ function Shell({ fonts }: { fonts: Fonts }) {
           {overlay === "about" && <AboutDialog key="about" />}
           {overlay === "settings" && <SettingsDialog key="settings" />}
           {overlay === "reset-confirm" && <ResetConfirmDialog key="reset" />}
+          {overlay === "demo-reset" && <DemoResetDialog key="demo-reset" />}
+          {overlay === "playtest-start" && <PlaytestStartDialog key="pt-start" />}
+          {overlay === "playtest-finish" && <PlaytestFinishDialog key="pt-finish" />}
+          {overlay === "playtest-summary" && <PlaytestSummaryDialog key="pt-summary" />}
         </AnimatePresence>
 
         {boot.status === "loading" && <BootSplash />}

@@ -183,7 +183,7 @@ export function insightFor(r: Omit<RoundReport, "insight">): string {
   const surplus = player.waste.surplus;
   const plate = player.waste.plateWaste;
   if (r.stars.count === 3) {
-    return `Everyone got a hot meal and only ${fmt(player.waste.avoidable)} portions were wasted. Student information let the kitchen cook close to real demand.`;
+    return `Everyone got a hot meal and only ${fmt(player.waste.avoidable)} portions were wasted. Student information let the kitchen cook close to actual demand.`;
   }
   if (policy.offerSmallServings && res.smallServings > 0 && policy.portionsPrepared >= baseline.plan.policy.portionsPrepared - 2) {
     return `Small servings cut plate waste, but the kitchen cooked as much as usual, so the saved food stayed in the pots. When students take less, the kitchen can cook less.`;
@@ -193,7 +193,7 @@ export function insightFor(r: Omit<RoundReport, "insight">): string {
       return `You cooked ${fmt(surplus)} portions that were never served, more than even the top of the forecast (${forecast.high}) could eat.`;
     }
     if (!voice.rsvp) {
-      return `You cooked ${fmt(surplus)} portions that were never served. The forecast was wide (${forecast.low}–${forecast.high}); RSVP replies would have let the kitchen cook closer to real demand.`;
+      return `You cooked ${fmt(surplus)} portions that were never served. The forecast was wide (${forecast.low}–${forecast.high}); RSVP replies would have let the kitchen cook closer to actual demand.`;
     }
     return `${fmt(surplus)} portions were never served, even with RSVP's narrower forecast (${forecast.low}–${forecast.high}). The kitchen could cook a little closer to the middle of the range.`;
   }

@@ -2783,3 +2783,249 @@ button.eco-path__dot:not(:disabled) {
 .eco-done > div {
   min-width: 0;
 }
+
+/* ------------------------------------------------------------ playtest */
+
+.eco-next-hint {
+  margin-top: -2px;
+  font-size: 11.5px;
+  text-align: center;
+  color: var(--eco-ink-2);
+}
+
+.eco-team-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.eco-playchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 9px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--eco-forest);
+  color: var(--eco-ivory);
+  font-size: 11.5px;
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.eco-playchip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e0634a;
+  box-shadow: 0 0 0 3px rgba(224, 99, 74, 0.25);
+}
+
+.eco-playchip__btn {
+  height: 22px;
+  padding: 0 9px;
+  border: none;
+  border-radius: 999px;
+  background: var(--eco-gold);
+  color: var(--eco-forest);
+  font-size: 11.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.eco-q {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.eco-q__label {
+  padding: 0;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--eco-ink);
+}
+
+.eco-q textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 52px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--eco-line-2);
+  background: #fffdf8;
+  font: 500 13.5px/1.35 var(--eco-body);
+  color: var(--eco-ink);
+}
+
+.eco-q textarea:focus {
+  outline: none;
+  border-color: var(--eco-gold);
+  box-shadow: 0 0 0 2px rgba(201, 162, 75, 0.3);
+}
+
+.eco-scale {
+  display: flex;
+  gap: 6px;
+}
+
+.eco-scale__btn {
+  flex: 1;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid var(--eco-line-2);
+  background: #fffdf8;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.eco-scale__btn--wide {
+  font-size: 13.5px;
+}
+
+.eco-scale__btn.is-on {
+  background: var(--eco-forest);
+  border-color: var(--eco-forest);
+  color: var(--eco-gold-2);
+}
+
+.eco-scale__ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--eco-ink-3);
+}
+
+.eco-pt-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--eco-parchment);
+  align-self: flex-start;
+}
+
+.eco-pt-tabs button {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.eco-pt-tabs button.is-on {
+  background: #fffdf8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.eco-pt-badge {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--eco-moss);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.eco-pt-badge--demo {
+  background: var(--eco-ochre);
+}
+
+.eco-pt-empty {
+  padding: 14px;
+  border-radius: 9px;
+  border: 1px dashed var(--eco-line-2);
+  text-align: center;
+  color: var(--eco-ink-2);
+}
+
+.eco-pt-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+
+.eco-pt-stats div {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fffdf8;
+  border: 1px solid var(--eco-line);
+}
+
+.eco-pt-stats dt {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--eco-ink-3);
+}
+
+.eco-pt-stats dd {
+  margin: 0;
+  font-family: var(--eco-display);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--eco-forest);
+}
+
+.eco-pt-responses {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eco-pt-responses li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fffdf8;
+  border: 1px solid var(--eco-line);
+  font-size: 12.5px;
+}
+
+.eco-pt-responses__meta {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--eco-ink-3);
+}
+
+.eco-pt-actions {
+  margin-top: 4px;
+}
+
+.eco-pt-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--eco-brick);
+}
+
+.eco-pt-copybox {
+  width: 100%;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--eco-line-2);
+}
+
+.eco-pt-dev {
+  gap: 10px;
+  align-items: center;
+  border-top: 1px dashed var(--eco-line-2);
+  padding-top: 8px;
+}

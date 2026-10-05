@@ -27,7 +27,7 @@ export function IntroOverlay() {
         exit={{ y: 8, opacity: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
-        <p className="eco-intro__eyebrow">{scenario.definition.dayLabel} lunch</p>
+        <p className="eco-intro__eyebrow">School cafeteria · {scenario.definition.dayLabel} lunch</p>
         <h1 id="eco-intro-title">
           {range.low}–{range.high} students may come.
         </h1>
@@ -162,8 +162,10 @@ export function AboutDialog() {
       </table>
       <h3>Game indicators and real measurements</h3>
       <p>
-        Credits, hot meals served and food use are game indicators. Any real school measurement will appear separately,
-        with its source and date, and will never be mixed into game numbers.
+        Credits, hot meals served and food use are game indicators, shown under <strong>Simulated lunch</strong>. Numbers
+        entered in the Cafeteria Waste Audit are labelled <strong>School measurement</strong>, demonstration values are
+        labelled <strong>Demo data</strong>, and neither is ever mixed into game numbers. EcoRise converts nothing into
+        CO₂, money or water savings.
       </p>
       <p className="eco-muted">
         <FeedbackIcon size={16} /> Scenario text such as Feedback Box results is fictional.
@@ -238,18 +240,40 @@ export function SettingsDialog() {
           Reset EcoRise…
         </button>
       </fieldset>
+      <fieldset className="eco-fieldset">
+        <legend>For the team</legend>
+        <p className="eco-small eco-muted">Playtests are anonymous and stay in this browser.</p>
+        <div className="eco-team-tools">
+          <button type="button" className="eco-btn" onClick={() => store.actions.openOverlay("playtest-start")}>
+            Start playtest…
+          </button>
+          <button type="button" className="eco-btn" onClick={() => store.actions.openOverlay("playtest-summary")}>
+            Playtest summary
+          </button>
+          <button type="button" className="eco-btn" onClick={() => store.actions.openOverlay("demo-reset")}>
+            Reset demo…
+          </button>
+        </div>
+      </fieldset>
     </Dialog>
   );
 }
 
 export function ResetConfirmDialog() {
   const { store, bus } = useEcoEnv();
+  const playtests = useEco((s) => s.playtest.sessions.length);
   return (
     <Dialog title="Reset EcoRise?" onClose={() => store.actions.openOverlay("settings")} width={440} tone="danger">
       <p>
         This clears your EcoRise progress, plans and settings in this browser and shows the introduction again. Data
         from other sites and apps is not touched. This can&rsquo;t be undone.
       </p>
+      {playtests > 0 && (
+        <p className="eco-callout">
+          This also deletes {playtests} playtest record{playtests === 1 ? "" : "s"}. To keep them, use <strong>Reset demo</strong>{" "}
+          instead.
+        </p>
+      )}
       <div className="eco-row eco-row--end">
         <button type="button" className="eco-btn" onClick={() => store.actions.openOverlay("settings")} data-autofocus>
           Cancel
