@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import type { Bus } from "../state/bus";
+import { stepsCompleted } from "../model/audit";
 import { prefersReducedMotion, sustainabilityFlagRaised, type EcoState, type EcoStore, type Selection } from "../state/store";
 import { iso, type BakedTexture, type V2 } from "./art/iso";
 import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
@@ -77,6 +78,7 @@ export class CityScene extends Phaser.Scene {
   private targets = new Map<Target, Phaser.GameObjects.Image>();
   private labels = new Set<Phaser.GameObjects.Text>();
   private selRings: Record<"kitchen" | "noticeboard" | "meadow" | "mission", Phaser.GameObjects.Image> = {} as never;
+  private board!: { notes: Phaser.GameObjects.Image[]; badge: Phaser.GameObjects.Text; shown: number };
   private sustain!: { pole: Phaser.GameObjects.Image; cloth: Phaser.GameObjects.Image; top: V2; raised: boolean; tween: Phaser.Tweens.Tween | null };
   private voiceProps!: Record<"rsvp" | "feedback" | "smallPlease" | "sizes", Phaser.GameObjects.Image>;
   private sparkles: Phaser.GameObjects.Image[] = [];
@@ -308,7 +310,26 @@ export class CityScene extends Phaser.Scene {
     const plaque = (tex: BakedTexture, at: V2) =>
       this.add.image(at.x, at.y, tex.key, tex.frame).setOrigin(tex.originX, tex.originY).setScale(1 / tex.scale).setDepth(DEPTH.ui - 30);
     this.plaques.push(plaque(a.plaqueCafeteria, iso(KITCHEN.x + 1.2, KITCHEN.y + 1.6, 96)));
-    this.plaques.push(plaque(a.plaqueMission, iso(MISSION_BOARD.x + 0.5, MISSION_BOARD.y + 0.5, 50)));
+    const missionPlaque = plaque(a.plaqueMission, iso(MISSION_BOARD.x + 0.5, MISSION_BOARD.y + 0.5, 50));
+    this.plaques.push(missionPlaque);
+    // Progress on the physical board: a pinned note per finished step, and a count on its sign.
+    const plaqueW = missionPlaque.frame.width / a.plaqueMission.scale;
+    this.board = {
+      notes: a.boardNotes.map((t) => this.put(t, MISSION_BOARD.x, MISSION_BOARD.y, mDepth + 0.05).setVisible(false)),
+      badge: this.add
+        .text(missionPlaque.x + plaqueW / 2 + 7, missionPlaque.y - 19, "0/5", {
+          fontFamily: this.deps.fonts.body,
+          fontSize: "7px",
+          fontStyle: "700",
+          color: "#1f3a2a",
+          backgroundColor: "#e2c27a",
+          padding: { x: 3, y: 1.5 },
+          resolution: 8,
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(DEPTH.ui - 29),
+      shown: -1,
+    };
     const plotTop = iso(MEADOW.x + MEADOW.w / 2, MEADOW.y + MEADOW.d / 2, 26);
     const hubTop = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, HUB.h + 30);
     const hubDepth = depthAt(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2);
@@ -430,6 +451,29 @@ export class CityScene extends Phaser.Scene {
     }
     // In build mode the plot ring stays lit so it is easy to find.
     if (state.phase === "building") this.selRings.meadow.setVisible(true).setAlpha(1);
+  }
+
+  /** The board shows real (school) progress only: demo data never changes the campus. */
+  private syncBoard(done: number, instant: boolean) {
+    const b = this.board;
+    if (done === b.shown) return;
+    const grew = done > b.shown && b.shown >= 0;
+    b.badge.setText(done >= 5 ? "✓ 5/5" : `${done}/5`);
+    b.notes.forEach((n, i) => {
+      const s = 1 / this.art.boardNotes[i].scale;
+      const visible = i < done;
+      this.tweens.killTweensOf(n);
+      n.setVisible(visible).setAlpha(1).setScale(s);
+      if (visible && grew && i >= b.shown && !instant && !this.reduced) {
+        n.setAlpha(0);
+        this.tweens.add({ targets: n, alpha: 1, duration: 380, delay: (i - b.shown) * 120, ease: "Sine.easeOut" });
+      }
+    });
+    if (grew && !instant && !this.reduced) {
+      const s = b.badge.scale;
+      this.tweens.add({ targets: b.badge, scale: { from: s * 1.5, to: s }, duration: 420, ease: "Back.easeOut" });
+    }
+    b.shown = done;
   }
 
   /** The Campus Sustainability Flag: hidden, or raised up its pole once. */
@@ -677,6 +721,7 @@ export class CityScene extends Phaser.Scene {
     }
     if (state.phase !== "constructing") this.syncCampus(state);
     this.syncFlag(sustainabilityFlagRaised(state.save), initial);
+    this.syncBoard(stepsCompleted(state.save.mission.school), initial);
 
     if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase) {
       const sel = state.introOpen ? null : state.phase === "planning" || state.phase === "building" ? state.selection : null;

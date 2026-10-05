@@ -2024,12 +2024,12 @@
   min-width: 0;
 }
 
-.eco-source--sample {
+.eco-source--demo {
   background: repeating-linear-gradient(-45deg, #f7ead0 0 8px, #f2e0bd 8px 16px);
   border-color: rgba(183, 121, 31, 0.55);
 }
 
-.eco-source--sample .eco-source__badge {
+.eco-source--demo .eco-source__badge {
   background: var(--eco-ochre);
 }
 
@@ -2552,21 +2552,25 @@ button.eco-path__dot:not(:disabled) {
 }
 
 .eco-compare-real__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.eco-compare-real__head strong {
-  flex: 1;
   font-family: var(--eco-display);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  line-height: 1.25;
   color: var(--eco-forest);
 }
 
-.eco-compare-real--higher .eco-compare-real__head strong {
+.eco-compare-real--higher .eco-compare-real__head {
   color: var(--eco-brick);
+}
+
+.eco-compare-real--same .eco-compare-real__head {
+  color: var(--eco-ink);
+}
+
+.eco-compare-real__diff {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--eco-ink-2);
 }
 
 .eco-bar-row {
@@ -2603,4 +2607,179 @@ button.eco-path__dot:not(:disabled) {
 .eco-bar-row b {
   text-align: right;
   font-size: 13px;
+}
+
+.eco-tagline {
+  margin-top: -6px;
+  font-family: var(--eco-display);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--eco-moss);
+}
+
+.eco-bridge__chain {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--eco-forest);
+  font-weight: 700;
+}
+
+.eco-kicker {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eco-ink-3);
+}
+
+.eco-extras-link {
+  align-self: flex-start;
+  text-decoration: none;
+  color: var(--eco-moss);
+}
+
+.eco-fields--extra {
+  grid-template-columns: 1fr 1.4fr;
+}
+
+.eco-field__box.is-bad {
+  border-color: var(--eco-brick);
+  background: #fff8f5;
+}
+
+.eco-field__err {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--eco-brick);
+}
+
+.eco-field__box input[type="date"] {
+  font-size: 13px;
+}
+
+.eco-warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--eco-ochre-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #7a5212;
+}
+
+.eco-warn svg {
+  flex: none;
+}
+
+.eco-tally {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 10px;
+  margin: 0;
+  padding: 9px 10px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--eco-line);
+  background: #fffdf8;
+}
+
+.eco-tally legend {
+  padding: 0 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--eco-ink-2);
+}
+
+.eco-tally__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--eco-ink-2);
+}
+
+.eco-tally__row input {
+  width: 44px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--eco-line-2);
+  background: #fff;
+  text-align: center;
+  font: 700 13px var(--eco-body);
+  color: var(--eco-ink);
+}
+
+.eco-testcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(31, 58, 42, 0.45);
+  background: repeating-linear-gradient(-45deg, #fffdf8 0 10px, #f8f2e4 10px 20px);
+  font-family: var(--eco-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--eco-forest);
+}
+
+.eco-measure-tag {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--eco-moss);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eco-measure-tag--demo {
+  background: var(--eco-ochre);
+}
+
+
+.eco-mission .eco-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.eco-mission .eco-chip-btn {
+  height: auto;
+  min-height: 34px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.eco-mission .eco-chip-btn svg {
+  flex: none;
+}
+
+.eco-compare-real .eco-bar-row {
+  grid-template-columns: 64px 1fr 74px;
+}
+
+.eco-compare-real--higher .eco-bar-row--after .eco-bar-row__track span {
+  background: var(--eco-brick);
+}
+
+.eco-compare-real--same .eco-bar-row--after .eco-bar-row__track span {
+  background: var(--eco-ink-3);
+}
+
+.eco-done strong {
+  white-space: nowrap;
+}
+
+.eco-done > div {
+  min-width: 0;
 }

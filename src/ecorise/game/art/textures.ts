@@ -766,27 +766,42 @@ export function missionBoardSketch(fonts: ArtFonts): Sketch {
     const at = iso(0.5, y + 0.002, 32.4);
     wallText(ctx, "WASTE AUDIT", at, { size: 3.6, color: "#f3ecdd", font: fonts.body, weight: 700, tracking: 0.5, align: "center" });
   });
-  // Results sheet with falling bars.
-  s.face([[0.14, y + 0.002, 16], [0.48, y + 0.002, 16], [0.48, y + 0.002, 29], [0.14, y + 0.002, 29]], 0xfbf6ea, edge(0.3, 0.5));
-  [9, 7, 5].forEach((h, i) => {
-    const x = 0.19 + i * 0.09;
-    s.face([[x, y + 0.003, 18], [x + 0.06, y + 0.003, 18], [x + 0.06, y + 0.003, 18 + h], [x, y + 0.003, 18 + h]], i === 2 ? PAL.forestMid : 0xc28a4c, null);
-  });
-  // Checklist sheet.
-  s.face([[0.54, y + 0.002, 16.5], [0.84, y + 0.002, 16.5], [0.84, y + 0.002, 29], [0.54, y + 0.002, 29]], 0xffffff, edge(0.3, 0.5));
-  for (let i = 0; i < 4; i++) {
-    const z = 26.5 - i * 2.8;
-    const done = i < 2;
-    s.line([iso(0.57, y + 0.003, z), iso(0.6, y + 0.003, z - (done ? 1 : 0))], done ? PAL.forestMid : 0xb7a993, 0.8);
-    s.line([iso(0.63, y + 0.003, z), iso(0.8, y + 0.003, z)], 0x9a8b7a, 0.6, 0.8);
-  }
-  const pin = iso(0.31, y, 29);
-  s.circle(pin.x, pin.y, 1.2, { fill: PAL.terracotta });
-  const pin2 = iso(0.69, y, 29);
-  s.circle(pin2.x, pin2.y, 1.2, { fill: PAL.gold });
   // A small kitchen scale on the ground: measuring comes first.
   s.box(0.62, 0.74, 0, 0.26, 0.2, 4, wallShades(PAL.steel));
   s.box(0.6, 0.72, 4, 0.3, 0.24, 1, wallShades(0xe6e1d6));
+  return s;
+}
+
+/** Where each step's pinned note sits on the board face (x range, z range). */
+const BOARD_NOTES: { x: [number, number]; z: [number, number]; fill: number }[] = [
+  { x: [0.13, 0.35], z: [23.5, 30], fill: 0xfbf6ea },
+  { x: [0.39, 0.61], z: [23, 29.5], fill: 0xf3e2b4 },
+  { x: [0.65, 0.87], z: [23.5, 30], fill: 0xdfe8d2 },
+  { x: [0.2, 0.44], z: [15, 21.5], fill: 0xffffff },
+  { x: [0.54, 0.8], z: [15, 21.5], fill: 0xfbf6ea },
+];
+
+/** One pinned note for a completed mission step (0–4). Placed at the board's tile. */
+export function boardNoteSketch(i: number): Sketch {
+  const s = new Sketch();
+  const y = 0.584;
+  const n = BOARD_NOTES[i];
+  const [x0, x1] = n.x;
+  const [z0, z1] = n.z;
+  s.face([[x0, y, z0], [x1, y, z0], [x1, y, z1], [x0, y, z1]], n.fill, edge(0.35, 0.5));
+  if (i === 4) {
+    // Measure again: before and after bars.
+    s.face([[x0 + 0.04, y, z0 + 1], [x0 + 0.1, y, z0 + 1], [x0 + 0.1, y, z1 - 1.5], [x0 + 0.04, y, z1 - 1.5]], 0xc28a4c, null);
+    s.face([[x0 + 0.14, y, z0 + 1], [x0 + 0.2, y, z0 + 1], [x0 + 0.2, y, z0 + 3.6], [x0 + 0.14, y, z0 + 3.6]], PAL.forestMid, null);
+  } else {
+    // A tick and two written lines.
+    const zt = z1 - 2.2;
+    s.line([iso(x0 + 0.03, y, zt), iso(x0 + 0.05, y, zt - 1.1), iso(x0 + 0.09, y, zt + 0.6)], PAL.forestMid, 0.8);
+    s.line([iso(x0 + 0.04, y, z0 + 3.4), iso(x1 - 0.04, y, z0 + 3.4)], 0x9a8b7a, 0.6, 0.8);
+    s.line([iso(x0 + 0.04, y, z0 + 1.6), iso(x1 - 0.08, y, z0 + 1.6)], 0x9a8b7a, 0.6, 0.8);
+  }
+  const pin = iso((x0 + x1) / 2, y, z1);
+  s.circle(pin.x, pin.y, 1.1, { fill: i % 2 ? PAL.gold : PAL.terracotta });
   return s;
 }
 
@@ -1859,6 +1874,7 @@ export interface ArtCatalog {
   missionBoard: BakedTexture;
   sustainFlag: BakedTexture;
   plaqueMission: BakedTexture;
+  boardNotes: BakedTexture[];
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -1927,7 +1943,8 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     flagCloth: b("flag-cloth", flagClothSketch()),
     missionBoard: b("mission-board", missionBoardSketch(fonts), 3),
     sustainFlag: b("sustain-flag", sustainFlagSketch(), 3),
-    plaqueMission: b("plaque-mission", plaqueSketch("Waste Audit", "audit", fonts), 3),
+    plaqueMission: b("plaque-mission", plaqueSketch("Cafeteria Waste Audit", "audit", fonts), 3),
+    boardNotes: [0, 1, 2, 3, 4].map((i) => b(`board-note-${i}`, boardNoteSketch(i), 3)),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

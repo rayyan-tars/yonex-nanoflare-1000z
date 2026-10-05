@@ -9,7 +9,7 @@ import {
   type StorageLike,
 } from "./persistence";
 import { PLANNING_HUB_COST, createEcoStore, planningHubRefusal, sustainabilityFlagRaised } from "./store";
-import { SAMPLE_BASELINE, auditOutcome } from "../model/audit";
+import { DEMO_BASELINE, auditOutcome, stepsCompleted } from "../model/audit";
 import { NO_VOICE, forecastRange, planningView } from "../model/planning";
 import { MONDAY_STEW, getScenario } from "../model/scenarios";
 
@@ -390,28 +390,43 @@ describe("Cafeteria Waste Audit in the store", () => {
     store.actions.enterCity();
     return { store, storage };
   }
-  const BASE = { mealsServed: 200, plateWasteG: 6000, surplusG: 4000 };
-  const AFTER = { mealsServed: 190, plateWasteG: 3800, surplusG: 2000 };
-  function throughStep4(store: ReturnType<typeof fresh>["store"]) {
+  const BASE = { mealsServed: 120, plateWasteG: 4800, surplusG: 1200, date: "2026-10-05", menu: "Vegetable stew" };
+  const AFTER = { mealsServed: 118, plateWasteG: 3600, surplusG: 1120, date: null, menu: null };
+  function throughStep3(store: ReturnType<typeof fresh>["store"]) {
     store.actions.openMission();
     store.actions.startAudit("school");
     expect(store.actions.auditBaseline(BASE)).toBe(true);
-    store.actions.auditCauses(["portions", "attendance"]);
+    store.actions.auditCauses(["portions-large", "attendance-lower"]);
+    store.actions.auditFeedback({ portion: 5, disliked: 1, full: 2, time: 0, other: 0 });
     store.actions.auditDiscussed(true);
     store.actions.auditChange("rsvp");
   }
 
-  it("runs the full mission and only raises the flag once a real audit is verified", () => {
+  it("runs the full mission; the flag rises only when a school audit is verified", () => {
     const { store } = fresh();
-    throughStep4(store);
+    throughStep3(store);
     store.actions.submitAudit();
     expect(store.getState().save.mission.school!.status).toBe("submitted");
     expect(sustainabilityFlagRaised(store.getState().save)).toBe(false);
     store.actions.verifyAuditDemo();
     expect(sustainabilityFlagRaised(store.getState().save)).toBe(true);
-    expect(auditOutcome(store.getState().save.mission.school!).kind).toBe("audit-completed");
+    expect(auditOutcome(store.getState().save.mission.school!).kind).toBe("follow-up-not-measured");
+    expect(store.actions.auditFollowUp(AFTER, true)).toBe(false); // not tested yet
+    store.actions.markChangeTested();
     expect(store.actions.auditFollowUp(AFTER, true)).toBe(true);
     expect(store.getState().save.mission.school!.status).toBe("measured");
+    expect(stepsCompleted(store.getState().save.mission.school)).toBe(5);
+  });
+
+  it("entering numbers earns no Eco Credits", () => {
+    const { store } = fresh();
+    const credits = store.getState().save.progress.credits;
+    throughStep3(store);
+    store.actions.submitAudit();
+    store.actions.verifyAuditDemo();
+    store.actions.markChangeTested();
+    store.actions.auditFollowUp(AFTER, true);
+    expect(store.getState().save.progress.credits).toBe(credits);
   });
 
   it("refuses out-of-order steps and leaves the record unchanged", () => {
@@ -420,78 +435,90 @@ describe("Cafeteria Waste Audit in the store", () => {
     const before = store.getState().save.mission.school;
     store.actions.verifyAuditDemo();
     store.actions.submitAudit();
+    store.actions.markChangeTested();
     expect(store.actions.auditFollowUp(AFTER, true)).toBe(false);
     expect(store.getState().save.mission.school).toEqual(before);
     expect(store.getState().notice).not.toBeNull();
   });
 
-  it("keeps sample and school records apart, and samples earn no reward", () => {
+  it("keeps demo and school records apart; demo data earns no reward", () => {
     const { store } = fresh();
-    throughStep4(store);
-    store.actions.startAudit("sample");
-    expect(store.getState().missionView).toBe("sample");
+    throughStep3(store);
+    store.actions.startAudit("demo");
+    expect(store.getState().missionView).toBe("demo");
     store.actions.submitAudit();
     store.actions.verifyAuditDemo();
     const m = store.getState().save.mission;
-    expect(m.sample!.status).toBe("verified");
-    expect(m.sample!.source).toBe("sample");
-    expect(m.sample!.baseline).toEqual(SAMPLE_BASELINE);
-    // The school record is untouched by sample actions, and no flag is raised.
+    expect(m.demo!.status).toBe("verified");
+    expect(m.demo!.source).toBe("demo");
+    expect(m.demo!.baseline).toEqual(DEMO_BASELINE);
     expect(m.school!.status).toBe("proposed");
     expect(m.school!.baseline).toEqual(BASE);
     expect(sustainabilityFlagRaised(store.getState().save)).toBe(false);
-    // Edits while viewing the sample never reach the school record.
+    // Edits while viewing the demo never reach the school record.
     expect(store.actions.auditBaseline(AFTER)).toBe(false);
     expect(store.getState().save.mission.school!.baseline).toEqual(BASE);
-    store.actions.discardAudit("sample");
-    expect(store.getState().save.mission.sample).toBeNull();
+    store.actions.discardAudit("demo");
+    expect(store.getState().save.mission.demo).toBeNull();
     expect(store.getState().missionView).toBe("school");
   });
 
   it("a submitted school audit cannot be discarded", () => {
     const { store } = fresh();
-    throughStep4(store);
+    throughStep3(store);
     store.actions.submitAudit();
     store.actions.discardAudit("school");
     expect(store.getState().save.mission.school!.status).toBe("submitted");
   });
 
-  it("survives a reload, including straight after a status change", () => {
+  it("reload restores every part of the mission, including verification", () => {
     const { store, storage } = fresh();
-    throughStep4(store);
+    throughStep3(store);
     store.actions.submitAudit();
     store.actions.verifyAuditDemo();
+    store.actions.markChangeTested();
+    store.actions.startAudit("demo");
     // No flush: status changes are written immediately.
     const loaded = loadSave(storage);
     expect(loaded.status).toBe("loaded");
-    expect(loaded.data.mission.school!.status).toBe("verified");
-    expect(loaded.data.mission.school!.baseline).toEqual(BASE);
+    const school = loaded.data.mission.school!;
+    expect(school.status).toBe("verified");
+    expect(school.baseline).toEqual(BASE);
+    expect(school.causes).toEqual(["attendance-lower", "portions-large"]);
+    expect(school.feedback).toEqual({ portion: 5, disliked: 1, full: 2, time: 0, other: 0 });
+    expect(school.change).toBe("rsvp");
+    expect(school.changeTested).toBe(true);
+    expect(loaded.data.mission.demo!.source).toBe("demo");
     const again = createEcoStore({ initialSave: loaded.data, loadStatus: "loaded", storage, systemReducedMotion: false });
     expect(sustainabilityFlagRaised(again.getState().save)).toBe(true);
   });
 
   it("the lunch game stays playable while a mission is incomplete", () => {
     const { store } = fresh();
-    throughStep4(store);
+    throughStep3(store);
+    const credits = store.getState().save.progress.credits;
     store.actions.tryAgain();
     store.actions.setPortions(130);
     store.actions.serveLunch();
     expect(store.getState().phase).toBe("serving");
     store.actions.finishService();
     expect(store.getState().round!.report.player.fed).toBe(true);
+    expect(store.getState().save.progress.credits).toBeGreaterThan(credits);
+    // The simulated round never touches the school measurements.
+    expect(store.getState().save.mission.school!.baseline).toEqual(BASE);
     expect(store.getState().save.mission.school!.status).toBe("proposed");
   });
 
   it("reset clears mission records", () => {
     const { store, storage } = fresh();
-    throughStep4(store);
+    throughStep3(store);
     store.actions.submitAudit();
     store.actions.verifyAuditDemo();
-    store.actions.startAudit("sample");
+    store.actions.startAudit("demo");
     store.actions.resetAll();
-    expect(store.getState().save.mission).toEqual({ school: null, sample: null });
+    expect(store.getState().save.mission).toEqual({ school: null, demo: null });
     expect(sustainabilityFlagRaised(store.getState().save)).toBe(false);
-    expect(loadSave(storage).data.mission).toEqual({ school: null, sample: null });
+    expect(loadSave(storage).data.mission).toEqual({ school: null, demo: null });
   });
 
   it("older saves without mission data load normally; tampered records are dropped", () => {
@@ -501,17 +528,18 @@ describe("Cafeteria Waste Audit in the store", () => {
     storage.setItem(SAVE_KEY, JSON.stringify(old));
     const r = loadSave(storage);
     expect(r.status).toBe("loaded");
-    expect(r.data.mission).toEqual({ school: null, sample: null });
+    expect(r.data.mission).toEqual({ school: null, demo: null });
 
     const bad = defaultSave();
-    // A sample record relabelled as school data, and a "verified" audit with no measurements.
+    const blank = { causes: [], feedback: null, discussed: false, change: null, changeTested: false, followUp: null };
+    // Demo numbers relabelled as a school record, and a "verified" demo with no measurements.
     bad.mission = {
-      school: { source: "sample", status: "proposed", baseline: SAMPLE_BASELINE, causes: [], discussed: false, change: null, followUp: null },
-      sample: { source: "sample", status: "verified", baseline: null, causes: [], discussed: false, change: null, followUp: null },
+      school: { source: "demo", status: "proposed", baseline: DEMO_BASELINE, ...blank },
+      demo: { source: "demo", status: "verified", baseline: null, ...blank },
     };
     storage.setItem(SAVE_KEY, JSON.stringify(bad));
     const r2 = loadSave(storage);
     expect(r2.status).toBe("repaired");
-    expect(r2.data.mission).toEqual({ school: null, sample: null });
+    expect(r2.data.mission).toEqual({ school: null, demo: null });
   });
 });

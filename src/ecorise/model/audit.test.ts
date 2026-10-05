@@ -1,59 +1,142 @@
 import { describe, expect, it } from "vitest";
 import {
-  SAMPLE_BASELINE,
-  SAMPLE_FOLLOW_UP,
+  DEMO_BASELINE,
+  DEMO_FOLLOW_UP,
   auditCompleted,
   auditOutcome,
   chooseChange,
+  compareMeasurements,
+  comparisonSentence,
+  markChangeTested,
+  measurementWarnings,
   newAuditRecord,
   recordBaseline,
   recordFollowUp,
   setCauses,
   setDiscussed,
+  setFeedback,
+  stepsCompleted,
   submitAudit,
   validAuditRecord,
+  validMeasurement,
   verifyAuditDemo,
   wastePerMeal,
   type AuditMeasurement,
   type AuditRecord,
   type AuditResult,
 } from "./audit";
+import { computeRoundReport } from "./report";
+import { NO_VOICE } from "./planning";
+import { MONDAY_STEW, getScenario } from "./scenarios";
+import { NO_UPGRADES } from "./types";
 
-const BASE: AuditMeasurement = { mealsServed: 200, plateWasteG: 6000, surplusG: 4000 };
-const AFTER: AuditMeasurement = { mealsServed: 190, plateWasteG: 3800, surplusG: 2000 };
+/** Measurement with `perMeal` grams per meal over 120 meals. */
+const m = (meals: number, plate: number, surplus: number): AuditMeasurement => ({
+  mealsServed: meals,
+  plateWasteG: plate,
+  surplusG: surplus,
+  date: null,
+  menu: null,
+});
+const BASE = m(120, 4800, 1200); // 50 g/meal
 
 function unwrap(r: AuditResult): AuditRecord {
   if (!r.ok) throw new Error(`refused: ${r.reason}`);
   return r.record;
 }
 
-/** A school audit taken through steps 1–4. */
-function ready(): AuditRecord {
+/** A school audit taken through steps 1–3. */
+function ready(baseline = BASE): AuditRecord {
   let r = newAuditRecord("school");
-  r = unwrap(recordBaseline(r, BASE));
-  r = unwrap(setCauses(r, ["portions"]));
+  r = unwrap(recordBaseline(r, baseline));
+  r = unwrap(setCauses(r, ["portions-large"]));
   r = unwrap(setDiscussed(r, true));
   return unwrap(chooseChange(r, "smaller-first"));
 }
 
-describe("waste per meal", () => {
-  it("is (plate waste + surplus) ÷ meals served", () => {
-    expect(wastePerMeal(BASE)).toEqual({ totalG: 10000, mealsServed: 200, perMealG: 50 });
-    expect(wastePerMeal({ mealsServed: 3, plateWasteG: 100, surplusG: 0 }).perMealG).toBeCloseTo(33.333, 3);
-    expect(wastePerMeal({ mealsServed: 120, plateWasteG: 0, surplusG: 0 }).perMealG).toBe(0);
+/** Submitted, verified and tested: ready for a follow-up. */
+function tested(baseline = BASE): AuditRecord {
+  return unwrap(markChangeTested(unwrap(verifyAuditDemo(unwrap(submitAudit(ready(baseline)))))));
+}
+
+function measured(followUp: AuditMeasurement, baseline = BASE) {
+  return unwrap(recordFollowUp(tested(baseline), followUp, true));
+}
+
+describe("calculations", () => {
+  it("total edible waste is plate waste plus unserved surplus", () => {
+    expect(wastePerMeal(m(120, 4800, 1200)).totalG).toBe(6000);
+    expect(wastePerMeal(m(10, 0, 0)).totalG).toBe(0);
   });
 
-  it("rejects impossible measurements", () => {
-    const r = newAuditRecord("school");
-    for (const bad of [
-      { mealsServed: 0, plateWasteG: 10, surplusG: 10 },
-      { mealsServed: 12.5, plateWasteG: 10, surplusG: 10 },
-      { mealsServed: 100, plateWasteG: -1, surplusG: 10 },
-      { mealsServed: 100, plateWasteG: 10, surplusG: Number.NaN },
-      { mealsServed: 100, plateWasteG: Infinity, surplusG: 0 },
-    ]) {
-      expect(recordBaseline(r, bad)).toEqual({ ok: false, reason: "invalid-measurement" });
+  it("waste per meal is total ÷ meals served", () => {
+    expect(wastePerMeal(m(120, 4800, 1200)).perMealG).toBe(50);
+    expect(wastePerMeal(m(3, 100, 0)).perMealG).toBeCloseTo(33.333, 3);
+  });
+
+  it("never divides by zero meals", () => {
+    expect(wastePerMeal(m(0, 500, 500)).perMealG).toBeNull();
+    expect(compareMeasurements(m(0, 10, 0), BASE)).toBeNull();
+    expect(validMeasurement(m(0, 10, 10))).toBe(false);
+  });
+
+  it("compares follow-up − baseline and the percentage change", () => {
+    const c = compareMeasurements(BASE, m(120, 3600, 1200))!; // 40 g/meal
+    expect(c.differenceG).toBeCloseTo(-10, 9);
+    expect(c.percentChange).toBeCloseTo(-20, 9);
+    expect(c.direction).toBe("lower");
+  });
+
+  it("has no percentage when the baseline is zero", () => {
+    const c = compareMeasurements(m(100, 0, 0), m(100, 500, 0))!;
+    expect(c.percentChange).toBeNull();
+    expect(c.direction).toBe("higher");
+    expect(comparisonSentence(c)).toBe("Waste per meal was 5 g higher in the follow-up measurement.");
+  });
+
+  it("rejects impossible measurements and warns about unusual ones", () => {
+    for (const bad of [m(0, 10, 10), m(12.5, 10, 10), m(100, -1, 10), m(100, 10, Number.NaN), m(100, Infinity, 0)]) {
+      expect(recordBaseline(newAuditRecord("school"), bad)).toEqual({ ok: false, reason: "invalid-measurement" });
     }
+    expect(validMeasurement({ ...BASE, date: "2026-02-30" })).toBe(false);
+    expect(validMeasurement({ ...BASE, date: "2026-10-05", menu: "Stew" })).toBe(true);
+    expect(measurementWarnings(m(100, 150_000, 0))).toHaveLength(1); // 1.5 kg per meal
+    expect(measurementWarnings(m(100, 5, 0))).toHaveLength(1); // probably kilograms
+    expect(measurementWarnings(m(100, 0, 0))).toHaveLength(1); // nothing weighed
+    expect(measurementWarnings(BASE)).toEqual([]);
+  });
+});
+
+describe("manual cases", () => {
+  it("A: no improvement is not celebrated", () => {
+    const o = auditOutcome(measured(m(120, 5040, 1200))); // 52 g/meal
+    expect(o.kind).toBe("measured");
+    if (o.kind !== "measured") return;
+    expect(o.comparison.direction).toBe("higher");
+    expect(comparisonSentence(o.comparison)).toBe("Waste per meal was 4% higher in the follow-up measurement.");
+  });
+
+  it("B: improvement is described, not attributed to the change", () => {
+    const o = auditOutcome(measured(m(120, 3600, 1200))); // 40 g/meal
+    if (o.kind !== "measured") throw new Error("not measured");
+    const text = comparisonSentence(o.comparison);
+    expect(text).toBe("Waste per meal was 20% lower in the follow-up measurement.");
+    expect(text).not.toMatch(/caus|because|reduced by/i);
+  });
+
+  it("C: the same result is 'no change measured'", () => {
+    const o = auditOutcome(measured(m(100, 4000, 1000))); // 50 g/meal
+    if (o.kind !== "measured") throw new Error("not measured");
+    expect(o.comparison.direction).toBe("same");
+    expect(comparisonSentence(o.comparison)).toBe("No change measured.");
+  });
+
+  it("D: a missing follow-up makes no outcome claim", () => {
+    const r = tested();
+    expect(auditCompleted(r)).toBe(true);
+    const o = auditOutcome(r);
+    expect(o.kind).toBe("follow-up-not-measured");
+    expect(o).not.toHaveProperty("comparison");
   });
 });
 
@@ -65,8 +148,10 @@ describe("mission states", () => {
     expect(r.status).toBe("submitted");
     r = unwrap(verifyAuditDemo(r));
     expect(r.status).toBe("verified");
-    r = unwrap(recordFollowUp(r, AFTER, true));
+    r = unwrap(markChangeTested(r));
+    r = unwrap(recordFollowUp(r, m(120, 3600, 1200), true));
     expect(r.status).toBe("measured");
+    expect(stepsCompleted(r)).toBe(5);
   });
 
   it("rejects impossible transitions", () => {
@@ -74,103 +159,105 @@ describe("mission states", () => {
     expect(submitAudit(fresh)).toEqual({ ok: false, reason: "incomplete" });
     expect(verifyAuditDemo(fresh)).toEqual({ ok: false, reason: "wrong-status" });
     expect(verifyAuditDemo(ready())).toEqual({ ok: false, reason: "wrong-status" });
-    expect(recordFollowUp(ready(), AFTER, true)).toEqual({ ok: false, reason: "wrong-status" });
+    expect(markChangeTested(ready())).toEqual({ ok: false, reason: "wrong-status" });
+    expect(recordFollowUp(ready(), BASE, true)).toEqual({ ok: false, reason: "wrong-status" });
     const submitted = unwrap(submitAudit(ready()));
     expect(submitAudit(submitted)).toEqual({ ok: false, reason: "wrong-status" });
-    expect(recordFollowUp(submitted, AFTER, true)).toEqual({ ok: false, reason: "wrong-status" });
-    // Steps 1–4 are frozen once submitted.
-    expect(recordBaseline(submitted, AFTER).ok).toBe(false);
-    expect(setCauses(submitted, ["unpopular"]).ok).toBe(false);
+    expect(markChangeTested(submitted)).toEqual({ ok: false, reason: "wrong-status" });
+    // Steps 1–3 are frozen once submitted.
+    expect(recordBaseline(submitted, BASE).ok).toBe(false);
+    expect(setCauses(submitted, ["timing"]).ok).toBe(false);
     expect(chooseChange(submitted, "rsvp").ok).toBe(false);
     const verified = unwrap(verifyAuditDemo(submitted));
     expect(verifyAuditDemo(verified)).toEqual({ ok: false, reason: "wrong-status" });
-    expect(recordFollowUp(verified, AFTER, false)).toEqual({ ok: false, reason: "method-not-confirmed" });
-    const measured = unwrap(recordFollowUp(verified, AFTER, true));
-    expect(recordFollowUp(measured, BASE, true)).toEqual({ ok: false, reason: "wrong-status" });
+    expect(recordFollowUp(verified, BASE, true)).toEqual({ ok: false, reason: "not-tested" });
+    const t = unwrap(markChangeTested(verified));
+    expect(recordFollowUp(t, BASE, false)).toEqual({ ok: false, reason: "method-not-confirmed" });
+    const done = unwrap(recordFollowUp(t, BASE, true));
+    expect(recordFollowUp(done, BASE, true)).toEqual({ ok: false, reason: "wrong-status" });
   });
 
-  it("each of steps 1–4 is required before submitting", () => {
+  it("a baseline is required before anything can be submitted or followed up", () => {
     let r = newAuditRecord("school");
-    r = unwrap(recordBaseline(r, BASE));
-    expect(submitAudit(r).ok).toBe(false);
-    r = unwrap(setCauses(r, ["attendance"]));
-    expect(submitAudit(r).ok).toBe(false);
+    r = unwrap(setCauses(r, ["unsure"]));
     r = unwrap(setDiscussed(r, true));
-    expect(submitAudit(r).ok).toBe(false);
     r = unwrap(chooseChange(r, "rsvp"));
-    expect(submitAudit(r).ok).toBe(true);
+    expect(submitAudit(r)).toEqual({ ok: false, reason: "incomplete" });
+    expect(validAuditRecord({ ...r, status: "verified", changeTested: true }, "school")).toBe(false);
+  });
+
+  it("one intervention at a time: choosing another replaces it", () => {
+    let r = ready();
+    r = unwrap(chooseChange(r, "rsvp"));
+    r = unwrap(chooseChange(r, "prep-quantity"));
+    expect(r.change).toBe("prep-quantity");
   });
 
   it("stores the baseline and follow-up separately", () => {
-    let r = unwrap(verifyAuditDemo(unwrap(submitAudit(ready()))));
-    r = unwrap(recordFollowUp(r, AFTER, true));
+    const after = { ...m(110, 3000, 900), date: "2026-11-02", menu: "Pasta" };
+    const r = measured(after);
     expect(r.baseline).toEqual(BASE);
-    expect(r.followUp).toEqual(AFTER);
-    expect(r.baseline).not.toBe(r.followUp);
+    expect(r.followUp).toEqual(after);
+  });
+
+  it("feedback is optional, anonymous counts only", () => {
+    const r = ready();
+    expect(r.feedback).toBeNull();
+    const withTally = unwrap(setFeedback(r, { portion: 4, disliked: 2, full: 0, time: 1, other: 0 }));
+    expect(withTally.feedback!.portion).toBe(4);
+    expect(setFeedback(r, { portion: -1, disliked: 0, full: 0, time: 0, other: 0 })).toEqual({ ok: false, reason: "invalid-feedback" });
+    expect(setFeedback(r, { portion: 1, disliked: 0, full: 0, time: 0, other: 0, name: 3 } as never).ok).toBe(false);
   });
 });
 
-describe("completion is not impact", () => {
-  it("a verified audit without a follow-up claims completion only", () => {
-    const r = unwrap(verifyAuditDemo(unwrap(submitAudit(ready()))));
-    expect(auditCompleted(r)).toBe(true);
-    const o = auditOutcome(r);
-    expect(o.kind).toBe("audit-completed");
-    expect(o).not.toHaveProperty("direction");
-    expect(o).not.toHaveProperty("changeG");
-  });
-
-  it("before submission or verification there is no outcome at all", () => {
-    expect(auditOutcome(ready()).kind).toBe("in-progress");
-    expect(auditOutcome(unwrap(submitAudit(ready()))).kind).toBe("in-progress");
-    expect(auditCompleted(unwrap(submitAudit(ready())))).toBe(false);
-  });
-
-  it("a reduction is reported only when the follow-up is actually lower", () => {
+describe("data honesty", () => {
+  it("completing the audit does not imply less waste", () => {
     const verified = unwrap(verifyAuditDemo(unwrap(submitAudit(ready()))));
-    const lower = auditOutcome(unwrap(recordFollowUp(verified, AFTER, true)));
-    expect(lower.kind === "measured" && lower.direction).toBe("lower");
-    if (lower.kind === "measured") {
-      expect(lower.baseline.perMealG).toBe(50);
-      expect(lower.followUp.perMealG).toBeCloseTo(5800 / 190, 9);
-      expect(lower.changePercent).toBeCloseTo(((5800 / 190 - 50) / 50) * 100, 9);
+    expect(auditCompleted(verified)).toBe(true);
+    expect(auditOutcome(verified).kind).toBe("follow-up-not-measured");
+    expect(auditOutcome(unwrap(submitAudit(ready()))).kind).toBe("in-progress");
+  });
+
+  it("user-entered data is never verified automatically", () => {
+    for (const r of [newAuditRecord("school"), ready(), unwrap(submitAudit(ready()))]) {
+      expect(r.status === "verified" || r.status === "measured").toBe(false);
     }
-    const higher = auditOutcome(unwrap(recordFollowUp(verified, { mealsServed: 200, plateWasteG: 8000, surplusG: 4000 }, true)));
-    expect(higher.kind === "measured" && higher.direction).toBe("higher");
-    const same = auditOutcome(unwrap(recordFollowUp(verified, { mealsServed: 400, plateWasteG: 12000, surplusG: 8000 }, true)));
-    expect(same.kind === "measured" && same.direction).toBe("same");
-  });
-});
-
-describe("sample records", () => {
-  it("are always labelled sample and carry only the sample numbers", () => {
-    const s = newAuditRecord("sample");
-    expect(s.source).toBe("sample");
-    expect(s.baseline).toEqual(SAMPLE_BASELINE);
-    // Sample numbers cannot be swapped for other numbers.
-    expect(recordBaseline(s, BASE)).toEqual({ ok: false, reason: "sample-is-fixed" });
-    const verified = unwrap(verifyAuditDemo(unwrap(submitAudit(s))));
-    expect(recordFollowUp(verified, AFTER, true)).toEqual({ ok: false, reason: "sample-is-fixed" });
-    const measured = unwrap(recordFollowUp(verified, SAMPLE_FOLLOW_UP, true));
-    expect(measured.source).toBe("sample");
-    expect(validAuditRecord(measured, "sample")).toBe(true);
   });
 
-  it("a stored record can never change source", () => {
-    const sample = newAuditRecord("sample");
-    expect(validAuditRecord(sample, "school")).toBe(false);
-    expect(validAuditRecord(ready(), "sample")).toBe(false);
-    // A "sample" with school numbers in it is rejected.
-    expect(validAuditRecord({ ...sample, baseline: BASE }, "sample")).toBe(false);
+  it("demo data is always labelled demo and uses only the demo numbers", () => {
+    const d = newAuditRecord("demo");
+    expect(d.source).toBe("demo");
+    expect(d.baseline).toEqual(DEMO_BASELINE);
+    expect(wastePerMeal(DEMO_BASELINE).perMealG).toBe(50);
+    expect(recordBaseline(d, BASE)).toEqual({ ok: false, reason: "demo-is-fixed" });
+    const t = unwrap(markChangeTested(unwrap(verifyAuditDemo(unwrap(submitAudit(d))))));
+    expect(recordFollowUp(t, m(118, 1, 1), true)).toEqual({ ok: false, reason: "demo-is-fixed" });
+    const done = unwrap(recordFollowUp(t, DEMO_FOLLOW_UP, true));
+    expect(done.source).toBe("demo");
+    expect(validAuditRecord(done, "demo")).toBe(true);
+    // A demo record can never be stored as a school record, or carry other numbers.
+    expect(validAuditRecord(done, "school")).toBe(false);
+    expect(validAuditRecord({ ...d, baseline: BASE }, "demo")).toBe(false);
+    expect(validAuditRecord(ready(), "demo")).toBe(false);
+  });
+
+  it("simulated lunch results cannot be stored as school measurements", () => {
+    const report = computeRoundReport(getScenario(MONDAY_STEW.id), {
+      voice: NO_VOICE,
+      policy: { portionsPrepared: 130, offerSmallServings: false },
+      upgrades: NO_UPGRADES,
+    });
+    expect(validMeasurement(report.player.result)).toBe(false);
+    expect(validMeasurement(report.player.waste)).toBe(false);
+    expect(recordBaseline(newAuditRecord("school"), report.player.result as never).ok).toBe(false);
   });
 
   it("stored records must be internally consistent", () => {
     expect(validAuditRecord(ready(), "school")).toBe(true);
-    // Measured without a follow-up, or a follow-up before measurement.
     expect(validAuditRecord({ ...ready(), status: "measured" }, "school")).toBe(false);
-    expect(validAuditRecord({ ...ready(), followUp: AFTER }, "school")).toBe(false);
-    // Submitted with steps missing.
-    expect(validAuditRecord({ ...newAuditRecord("school"), status: "verified" }, "school")).toBe(false);
+    expect(validAuditRecord({ ...ready(), followUp: BASE }, "school")).toBe(false);
+    expect(validAuditRecord({ ...ready(), changeTested: true }, "school")).toBe(false);
+    expect(validAuditRecord({ ...measured(BASE), changeTested: false }, "school")).toBe(false);
     expect(validAuditRecord({ ...ready(), causes: ["made-up"] }, "school")).toBe(false);
   });
 });

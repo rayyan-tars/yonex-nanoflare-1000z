@@ -1,6 +1,8 @@
 import {
   chooseChange,
+  markChangeTested,
   newAuditRecord,
+  setFeedback,
   recordBaseline,
   recordFollowUp,
   setCauses,
@@ -10,6 +12,7 @@ import {
   type AuditCause,
   type AuditChange,
   type AuditMeasurement,
+  type FeedbackTally,
   type AuditRecord,
   type AuditRefusal,
   type AuditResult,
@@ -64,8 +67,10 @@ export function sustainabilityFlagRaised(save: SaveData): boolean {
 const AUDIT_REFUSALS: Record<AuditRefusal, string> = {
   "wrong-status": "That step isn't available yet.",
   "invalid-measurement": "Check the numbers: meals served must be a whole number above 0, and grams can't be negative.",
-  "sample-is-fixed": "The sample record can't be edited. Start a real audit to enter your school's numbers.",
-  incomplete: "Finish steps 1 to 4 first.",
+  "invalid-feedback": "Feedback counts must be whole numbers, 0 or more.",
+  "demo-is-fixed": "Demo data can't be edited. Start a school audit to enter your own measurements.",
+  incomplete: "Finish steps 1 to 3 first.",
+  "not-tested": "Test the change at a later lunch first.",
   "method-not-confirmed": "Confirm the follow-up was measured the same way as the baseline.",
 };
 export type Overlay = "about" | "settings" | "reset-confirm" | null;
@@ -139,6 +144,8 @@ export interface EcoActions {
   discardAudit(source: AuditSource): void;
   auditBaseline(m: AuditMeasurement): boolean;
   auditCauses(causes: AuditCause[]): void;
+  auditFeedback(feedback: FeedbackTally | null): void;
+  markChangeTested(): void;
   auditDiscussed(discussed: boolean): void;
   auditChange(change: AuditChange | null): void;
   submitAudit(): void;
@@ -185,7 +192,7 @@ export function createEcoStore(options: {
       lastWriteFailed: false,
     },
     notice: null,
-    missionView: options.initialSave.mission.school || !options.initialSave.mission.sample ? "school" : "sample",
+    missionView: options.initialSave.mission.school || !options.initialSave.mission.demo ? "school" : "demo",
   };
   const listeners = new Set<Listener>();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -424,6 +431,8 @@ export function createEcoStore(options: {
       },
       auditBaseline: (m: AuditMeasurement) => applyAudit((r) => recordBaseline(r, m), true),
       auditCauses: (causes: AuditCause[]) => void applyAudit((r) => setCauses(r, causes)),
+      auditFeedback: (feedback: FeedbackTally | null) => void applyAudit((r) => setFeedback(r, feedback)),
+      markChangeTested: () => void applyAudit(markChangeTested, true),
       auditDiscussed: (discussed: boolean) => void applyAudit((r) => setDiscussed(r, discussed)),
       auditChange: (change: AuditChange | null) => void applyAudit((r) => chooseChange(r, change)),
       submitAudit: () => void applyAudit(submitAudit, true),

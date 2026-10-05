@@ -32,19 +32,19 @@ export interface SaveData {
     campus: CampusState;
   };
   /**
-   * Real-world mission records. Kept apart from game progress, and the
-   * school record apart from the sample: sample numbers are never shown as
-   * school results.
+   * Real-world mission measurements. Kept apart from simulated lunch
+   * progress, and the school record apart from the demo record: demo numbers
+   * are never shown as school measurements.
    */
   mission: MissionSave;
 }
 
 export interface MissionSave {
   school: AuditRecord | null;
-  sample: AuditRecord | null;
+  demo: AuditRecord | null;
 }
 
-export const DEFAULT_MISSION: MissionSave = { school: null, sample: null };
+export const DEFAULT_MISSION: MissionSave = { school: null, demo: null };
 
 export interface CampusState {
   planningHubUnlocked: boolean;
@@ -181,9 +181,9 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
   // Added in Phase 3: absent is normal; each record is checked on its own.
   if (raw.mission !== undefined) {
     const mission = isRecord(raw.mission) ? raw.mission : {};
-    const record = (v: unknown, source: "school" | "sample") =>
+    const record = (v: unknown, source: "school" | "demo") =>
       v === undefined || v === null ? null : fix(validAuditRecord(v, source), v as AuditRecord, null);
-    out.mission = { school: record(mission.school, "school"), sample: record(mission.sample, "sample") };
+    out.mission = { school: record(mission.school, "school"), demo: record(mission.demo, "demo") };
     if (!isRecord(raw.mission)) repaired = true;
   }
 
