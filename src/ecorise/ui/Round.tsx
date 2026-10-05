@@ -219,6 +219,8 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
   const missed = res.missedBecauseFoodRanOut + res.missedBecauseServiceTimeEnded;
   const perMeal = report.player.waste.perMeal;
   const best = useEco((s) => s.save.progress.ledger.scenarios[report.scenarioId]?.bestCreditedValue ?? 0);
+  const campus = useEco((s) => s.save.progress.campus);
+  const canImprove = campus.planningHubUnlocked && !campus.planningHubBuilt;
   const stars = [
     { on: report.stars.fed, label: "Everyone fed" },
     { on: report.stars.lowWaste, label: "Low waste" },
@@ -237,9 +239,21 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
           <button type="button" className="eco-link" onClick={() => store.actions.openOverlay("about")}>
             How is this worked out?
           </button>
-          <button type="button" className="eco-btn eco-btn--primary" onClick={store.actions.tryAgain} data-autofocus>
-            Try again
-          </button>
+          <span className="eco-row">
+            <button
+              type="button"
+              className={`eco-btn${canImprove ? "" : " eco-btn--primary"}`}
+              onClick={store.actions.tryAgain}
+              data-autofocus={canImprove ? undefined : true}
+            >
+              Try again
+            </button>
+            {canImprove && (
+              <button type="button" className="eco-btn eco-btn--primary eco-btn--gold" onClick={store.actions.improveCampus} data-autofocus>
+                Improve campus
+              </button>
+            )}
+          </span>
         </div>
       }
     >
@@ -254,6 +268,13 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
           </div>
         ))}
       </div>
+
+      {round.unlockedPlanningHub && (
+        <p className="eco-unlock" role="status">
+          <strong>Planning Hub unlocked</strong>
+          <span>Better lunch data can reduce uncertainty.</span>
+        </p>
+      )}
 
       {missed > 0 && (
         <p className="eco-alert" role="alert">

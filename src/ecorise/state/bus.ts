@@ -6,6 +6,7 @@ export interface BusEvents {
   serviceProgress: { processed: number };
   serviceSpeed: { speed: 1 | 2 };
   serviceSkip: undefined;
+  constructionSkip: undefined;
 }
 
 type Handler<T> = (payload: T) => void;

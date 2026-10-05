@@ -842,13 +842,18 @@ export function trayReturnSketch(fonts: ArtFonts): Sketch {
 export function scrapsSketch(): Sketch {
   const s = new Sketch();
   const rng = createRng(66);
-  s.ellipse(0, 0, 6.5, 3.2, { fill: 0x5b3d22 });
-  for (let i = 0; i < 16; i++) {
+  s.ellipse(0, 0, 8, 4, { fill: 0x4a321c });
+  for (let i = 0; i < 30; i++) {
     const a = rng() * Math.PI * 2;
-    const r = rng() * 4.5;
+    const r = Math.sqrt(rng()) * 6.5;
     const x = Math.cos(a) * r;
-    const y = Math.sin(a) * r * 0.5 - rng() * 3;
-    s.circle(x, y, 1.1 + rng() * 1.3, { fill: [PAL.stew, PAL.greens, PAL.rice, 0x8a5a32][i % 4] });
+    const y = Math.sin(a) * r * 0.5 - rng() * (7 - r * 0.8);
+    s.circle(x, y, 1.2 + rng() * 1.5, {
+      fill: [PAL.stew, PAL.greens, PAL.rice, 0x8a5a32][i % 4],
+      stroke: OUTLINE,
+      strokeAlpha: 0.25,
+      width: 0.4,
+    });
   }
   return s;
 }
@@ -975,7 +980,7 @@ export function markerSketch(): Sketch {
 }
 
 /** Floating name plaque with a small icon. Origin at the pointer tip. */
-export function plaqueSketch(text: string, icon: "cafeteria" | "lock", fonts: ArtFonts): Sketch {
+export function plaqueSketch(text: string, icon: "cafeteria" | "lock" | "plus" | "hub", fonts: ArtFonts, gold = false): Sketch {
   const s = new Sketch();
   const probe = document.createElement("canvas").getContext("2d")!;
   probe.font = `600 8px ${fonts.body}`;
@@ -985,7 +990,7 @@ export function plaqueSketch(text: string, icon: "cafeteria" | "lock", fonts: Ar
   s.custom([-w / 2 - 1, -h - 6, w / 2 + 1, 1], (ctx) => {
     const x0 = -w / 2;
     const y0 = -h - 5;
-    ctx.fillStyle = "rgba(20,36,27,0.9)";
+    ctx.fillStyle = gold ? "rgba(122,88,22,0.95)" : "rgba(20,36,27,0.9)";
     ctx.beginPath();
     ctx.roundRect(x0, y0, w, h, 4);
     ctx.fill();
@@ -1017,11 +1022,24 @@ export function plaqueSketch(text: string, icon: "cafeteria" | "lock", fonts: Ar
       ctx.quadraticCurveTo(ix + 3.8, iy - 1, ix + 2.2, iy);
       ctx.lineTo(ix + 2.2, iy + 3.5);
       ctx.stroke();
-    } else {
+    } else if (icon === "lock") {
       ctx.strokeRect(ix - 2.6, iy - 0.6, 5.2, 4);
       ctx.beginPath();
       ctx.arc(ix, iy - 0.8, 1.8, Math.PI, 0);
       ctx.stroke();
+    } else if (icon === "plus") {
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(ix - 3, iy);
+      ctx.lineTo(ix + 3, iy);
+      ctx.moveTo(ix, iy - 3);
+      ctx.lineTo(ix, iy + 3);
+      ctx.stroke();
+    } else {
+      // Bar chart: planning data.
+      ctx.fillRect(ix - 3.4, iy + 0.5, 1.6, 3);
+      ctx.fillRect(ix - 0.8, iy - 1.5, 1.6, 5);
+      ctx.fillRect(ix + 1.8, iy - 3.5, 1.6, 7);
     }
     ctx.font = `600 8px ${fonts.body}`;
     ctx.textBaseline = "middle";
@@ -1340,6 +1358,171 @@ export function personSketch(look: PersonLook, facing: "front" | "back", frame: 
   return s;
 }
 
+
+// ------------------------------------------------------- planning hub
+
+/** Hub footprint inside the plot (plot-local grid units). */
+export const HUB = { x: 0.55, y: 0.5, w: 1.9, d: 1.55, h: 34 } as const;
+
+/** The Planning Hub: a small timber-and-glass coordination building. Origin = plot back corner. */
+export function planningHubSketch(fonts: ArtFonts): Sketch {
+  const s = new Sketch();
+  const { x, y, w, d, h } = HUB;
+  const x1 = x + w;
+  const y1 = y + d;
+  const timber = 0xa47a52;
+  s.box(x - 0.05, y - 0.05, 0, w + 0.1, d + 0.1, 4, wallShades(PAL.stone));
+  s.box(x, y, 4, w, d, h - 4, wallShades(timber));
+  for (let i = 1; i < 10; i++) {
+    const yy = y + (d * i) / 10;
+    s.line([iso(x1, yy, 5), iso(x1, yy, h - 1)], shade(timber, 0.7), 0.5, 0.7);
+  }
+  // Glass front with a warm interior and a data screen.
+  s.custom([iso(x, y1).x - 3, iso(x, y1, h).y - 4, iso(x1, y1).x + 3, iso(x1, y1, 4).y + 3], (ctx) => {
+    const pts = P([[x + 0.08, y1, 6], [x1 - 0.5, y1, 6], [x1 - 0.5, y1, h - 7], [x + 0.08, y1, h - 7]]);
+    polyPath(ctx, pts);
+    ctx.fillStyle = linear(ctx, pts[3], pts[0], [[0, "#ffe7b9"], [1, "#d9894a"]]);
+    ctx.fill();
+    ctx.strokeStyle = css(PAL.bronze);
+    ctx.lineWidth = 0.8;
+    for (let i = 0; i <= 4; i++) {
+      const xx = x + 0.08 + ((x1 - 0.58 - x) * i) / 4;
+      const a = iso(xx, y1, 6);
+      const b = iso(xx, y1, h - 7);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // Student information screen beside the door.
+    const sc = P([[x1 - 0.42, y1 + 0.005, 11], [x1 - 0.08, y1 + 0.005, 11], [x1 - 0.08, y1 + 0.005, 25], [x1 - 0.42, y1 + 0.005, 25]]);
+    polyPath(ctx, sc);
+    ctx.fillStyle = "#1c2b33";
+    ctx.fill();
+    ctx.fillStyle = "#e2c27a";
+    for (let i = 0; i < 3; i++) {
+      const b0 = iso(x1 - 0.36 + i * 0.1, y1 + 0.006, 13);
+      const hgt = [4, 7, 10][i];
+      ctx.beginPath();
+      ctx.moveTo(b0.x, b0.y);
+      ctx.lineTo(b0.x + 2.2, b0.y + 1.1);
+      ctx.lineTo(b0.x + 2.2, b0.y + 1.1 - hgt);
+      ctx.lineTo(b0.x, b0.y - hgt);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = "#7fc3a6";
+    const t = iso(x1 - 0.38, y1 + 0.006, 23.5);
+    ctx.fillRect(t.x, t.y, 6, 0.9);
+  });
+  // Sign band.
+  s.leftRect(y1, x, x1, h - 6, h, PAL.forest, edge(0.45));
+  s.custom([iso(x, y1).x - 2, iso(x, y1, h + 2).y - 6, iso(x1, y1).x + 2, iso(x1, y1, h - 7).y + 2], (ctx) => {
+    wallText(ctx, "PLANNING HUB", iso(x + 0.18, y1, h - 4.6), { size: 4.2, color: css(0xe9c979), font: fonts.display, weight: 600, tracking: 0.9 });
+  });
+  // Side window.
+  rightWindow(s, x1, y + 0.35, y + 1.0, 12, 24, true);
+  // Flat roof, parapet and a small solar canopy.
+  s.box(x - 0.04, y - 0.04, h, w + 0.08, d + 0.08, 2.5, wallShades(0xe6dccb));
+  s.custom([iso(x + 0.3, y + 0.25).x - 6, iso(x + 0.3, y + 0.25, h + 14).y - 6, iso(x1, y).x + 6, iso(x1 - 0.2, y1 - 0.2, h).y + 6], (ctx) => {
+    const pts = P([[x + 0.35, y + 0.25, h + 10], [x1 - 0.2, y + 0.25, h + 10], [x1 - 0.2, y + 0.95, h + 5], [x + 0.35, y + 0.95, h + 5]]);
+    polyPath(ctx, pts);
+    ctx.fillStyle = linear(ctx, pts[0], pts[2], [[0, "#3d5a78"], [1, "#1f3048"]]);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(190,215,235,0.5)";
+    ctx.lineWidth = 0.4;
+    for (let i = 1; i < 4; i++) {
+      const xx = x + 0.35 + ((x1 - 0.55 - x) * i) / 4;
+      const a = iso(xx, y + 0.25, h + 10);
+      const b = iso(xx, y + 0.95, h + 5);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+  });
+  for (const [px, py] of [[x + 0.4, y + 0.95], [x1 - 0.25, y + 0.95]] as const) s.box(px, py, h, 0.04, 0.04, 5, wallShades(0x8b9397), null);
+  // Shaded veranda with benches.
+  s.box(x - 0.05, y1, h - 7, w + 0.1, 0.45, 1.8, { top: 0xd8c3a0, left: 0x7a5636, right: 0x5f4129 });
+  for (const px of [x + 0.02, x1 - 0.06]) s.box(px, y1 + 0.38, 0, 0.04, 0.04, h - 7, wallShades(PAL.woodDark), null);
+  s.box(x + 0.15, y1 + 0.12, 0, 0.7, 0.16, 5, wallShades(PAL.wood));
+  // Planters with greenery.
+  const rng = createRng(808);
+  for (const [px, py] of [[x - 0.25, y1 + 0.1], [x1 + 0.05, y1 - 0.2]] as const) {
+    s.box(px, py, 0, 0.22, 0.22, 6, wallShades(PAL.woodDark));
+    for (let i = 0; i < 4; i++) {
+      const c = iso(px + 0.05 + rng() * 0.12, py + 0.05 + rng() * 0.12, 8 + rng() * 3);
+      s.circle(c.x, c.y, 2.4, { fill: i % 2 ? PAL.leaf : PAL.leafLight });
+    }
+  }
+  return s;
+}
+
+/** Paved grounds that replace the empty plot once the hub is built. */
+export function hubGroundsSketch(): Sketch {
+  const s = new Sketch();
+  const { w, d } = MEADOW;
+  s.custom([iso(0, d).x - 2, iso(0, 0).y - 2, iso(w, 0).x + 2, iso(w, d).y + 2], (ctx) => {
+    const pts = [iso(0.1, 0.1), iso(w - 0.1, 0.1), iso(w - 0.1, d - 0.1), iso(0.1, d - 0.1)];
+    polyPath(ctx, pts);
+    ctx.fillStyle = css(shade(PAL.paver, 1.04));
+    ctx.fill();
+    ctx.strokeStyle = css(PAL.paverDark, 0.5);
+    ctx.lineWidth = 0.45;
+    for (let i = 1; i < w * 2; i++) {
+      const a = iso(i / 2, 0.1);
+      const b = iso(i / 2, d - 0.1);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    for (let i = 1; i < d * 2; i++) {
+      const a = iso(0.1, i / 2);
+      const b = iso(w - 0.1, i / 2);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = css(PAL.kerb, 0.85);
+    ctx.lineWidth = 1.2;
+    polyPath(ctx, pts);
+    ctx.stroke();
+    softShadow(ctx, [iso(HUB.x, HUB.y), iso(HUB.x + HUB.w + 1, HUB.y), iso(HUB.x + HUB.w + 1, HUB.y + HUB.d), iso(HUB.x, HUB.y + HUB.d)], 8, 0.32);
+  });
+  // A low hedge along the back edges.
+  const rng = createRng(919);
+  for (let i = 0; i < 10; i++) {
+    const p = iso(0.15 + (i / 9) * (w - 0.3), 0.18);
+    s.circle(p.x, p.y - 3, 3 + rng(), { fill: i % 2 ? PAL.leaf : PAL.leafDark });
+  }
+  return s;
+}
+
+/** Timber-and-steel scaffolding around the hub footprint. */
+export function scaffoldSketch(): Sketch {
+  const s = new Sketch();
+  const { x, y, w, d, h } = HUB;
+  const pole = { top: 0xd9dee0, left: 0xb3babd, right: 0x868e92 };
+  const posts: [number, number][] = [
+    [x - 0.1, y - 0.1],
+    [x + w + 0.06, y - 0.1],
+    [x + w + 0.06, y + d + 0.06],
+    [x - 0.1, y + d + 0.06],
+    [x + w / 2, y + d + 0.06],
+    [x + w + 0.06, y + d / 2],
+  ];
+  for (const [px, py] of posts) s.box(px, py, 0, 0.04, 0.04, h + 6, pole, null);
+  for (const z of [12, 24, h + 4]) {
+    s.box(x - 0.1, y + d + 0.06, z, w + 0.2, 0.18, 1.2, { top: 0xc79a62, left: 0x9c7048, right: 0x7a5636 }, edge(0.3, 0.5));
+    s.box(x + w + 0.06, y - 0.1, z, 0.18, d + 0.2, 1.2, { top: 0xc79a62, left: 0x9c7048, right: 0x7a5636 }, edge(0.3, 0.5));
+  }
+  s.line([iso(x - 0.1, y + d + 0.08, 2), iso(x + w / 2, y + d + 0.08, 24)], 0x868e92, 0.6);
+  s.line([iso(x + w + 0.08, y - 0.1, 2), iso(x + w + 0.08, y + d / 2, 24)], 0x868e92, 0.6);
+  return s;
+}
+
 // ---------------------------------------------------------------- ground
 
 function groundSketch(): Sketch {
@@ -1617,6 +1800,11 @@ export interface ArtCatalog {
   marker: BakedTexture;
   plaqueCafeteria: BakedTexture;
   plaquePlot: BakedTexture;
+  plaqueBuild: BakedTexture;
+  plaqueHub: BakedTexture;
+  hub: BakedTexture;
+  hubGrounds: BakedTexture;
+  scaffold: BakedTexture;
   puff: BakedTexture;
   shimmer: BakedTexture;
   sparkle: BakedTexture;
@@ -1678,6 +1866,11 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     marker: b("marker", markerSketch()),
     plaqueCafeteria: b("plaque-cafeteria", plaqueSketch("School Cafeteria", "cafeteria", fonts), 3),
     plaquePlot: b("plaque-plot", plaqueSketch("Future building", "lock", fonts), 3),
+    plaqueBuild: b("plaque-build", plaqueSketch("Build here", "plus", fonts, true), 3),
+    plaqueHub: b("plaque-hub", plaqueSketch("Planning Hub", "hub", fonts), 3),
+    hub: b("planning-hub", planningHubSketch(fonts), 2.5),
+    hubGrounds: b("hub-grounds", hubGroundsSketch()),
+    scaffold: b("scaffold", scaffoldSketch(), 2.5),
     puff: b("puff", puffSketch()),
     shimmer: b("shimmer", shimmerSketch()),
     sparkle: b("sparkle", sparkleSketch()),

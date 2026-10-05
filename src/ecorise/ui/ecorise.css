@@ -780,6 +780,40 @@
   flex: 1;
 }
 
+.eco-confidence {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(183, 121, 31, 0.6);
+  background: var(--eco-ochre-soft);
+  font-size: 11.5px;
+  color: var(--eco-ink-2);
+  line-height: 1.35;
+}
+
+.eco-confidence__badge {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--eco-ochre);
+}
+
+.eco-forecast__tag--hub {
+  background: var(--eco-gold);
+  color: var(--eco-forest);
+}
+
+.eco-forecast__was {
+  display: block;
+  font-size: 10.5px;
+  color: var(--eco-ink-3);
+  text-decoration: line-through;
+}
+
 .eco-hint-line {
   font-size: 11.5px;
   color: var(--eco-ink-3);
@@ -1770,4 +1804,187 @@
   .eco-pot__gauge {
     display: none;
   }
+}
+
+/* ------------------------------------------------------- progression */
+
+.eco-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.eco-btn--gold,
+.eco-dock__btn--gold {
+  background: linear-gradient(180deg, #d9b45f, var(--eco-gold));
+  border-color: #a8832f;
+  color: var(--eco-forest);
+}
+
+.eco-btn--gold:hover,
+.eco-dock__btn--gold:hover {
+  background: linear-gradient(180deg, #e4c272, #cfa850);
+}
+
+.eco-dock__btn--gold svg {
+  color: var(--eco-forest);
+}
+
+.eco-unlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #fbf0d0, #f3e2b4);
+  border: 1px solid rgba(169, 131, 47, 0.6);
+  font-size: 12.5px;
+  color: var(--eco-ink-2);
+}
+
+.eco-unlock strong {
+  font-family: var(--eco-display);
+  font-size: 16px;
+  color: var(--eco-forest);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.eco-hubcard {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.eco-hubcard__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--eco-forest);
+  color: var(--eco-gold-2);
+}
+
+.eco-hubcard div {
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+  color: var(--eco-ink-2);
+}
+
+.eco-hubcard strong {
+  font-size: 14px;
+  color: var(--eco-ink);
+}
+
+.eco-range-compare {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fffdf8;
+  border: 1px solid var(--eco-line);
+  font-size: 12.5px;
+  color: var(--eco-ink-2);
+}
+
+.eco-range-compare b {
+  font-size: 15px;
+  color: var(--eco-forest);
+}
+
+.eco-built-lead {
+  font-size: 13.5px;
+  color: var(--eco-ink);
+}
+
+.eco-range-big {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--eco-forest);
+  color: var(--eco-ivory);
+}
+
+.eco-range-big > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.eco-range-big .eco-forecast__lab {
+  color: rgba(243, 236, 221, 0.6);
+}
+
+.eco-range-big__old {
+  font-family: var(--eco-display);
+  font-size: 22px;
+  color: rgba(243, 236, 221, 0.55);
+  text-decoration: line-through;
+}
+
+.eco-range-big__new {
+  font-family: var(--eco-display);
+  font-weight: 600;
+  font-size: 30px;
+  color: var(--eco-gold-2);
+}
+
+.eco-range-big__arrow {
+  font-size: 20px;
+  color: var(--eco-gold-2);
+  padding-bottom: 6px;
+}
+
+.eco-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 46px;
+  padding: 0 8px 0 16px;
+  border-radius: 12px;
+  background: rgba(20, 36, 27, 0.92);
+  border: 1px solid rgba(201, 162, 75, 0.45);
+  color: var(--eco-ivory);
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 16px 34px -16px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+
+.eco-banner .eco-spinner {
+  border-color: rgba(243, 236, 221, 0.3);
+  border-top-color: var(--eco-gold-2);
+}
+
+.eco-banner__btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--eco-gold);
+  color: var(--eco-forest);
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.eco-banner__btn--ghost {
+  background: transparent;
+  color: rgba(243, 236, 221, 0.85);
+}
+
+.eco-banner__btn--ghost:hover {
+  background: rgba(243, 236, 221, 0.1);
 }

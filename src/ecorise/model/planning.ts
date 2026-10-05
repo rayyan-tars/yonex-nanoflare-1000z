@@ -101,6 +101,12 @@ export interface PlanRisk {
   expectedWaste: number;
   /** False when the kitchen has no feedback, so plate waste is invisible to it. */
   plateWasteKnown: boolean;
+  /**
+   * "low" when small servings are on but nobody has said how many students
+   * want less: the kitchen cannot tell how far the food will stretch, so the
+   * figures above are a full-portion worst case, not a prediction.
+   */
+  confidence: "ok" | "low";
 }
 
 /**
@@ -130,6 +136,7 @@ export function planRisk(view: PlanningView, offerSmallServings: boolean): PlanR
     shortagePercent: Math.round((short / n) * 100),
     expectedWaste: Math.round(waste / n),
     plateWasteKnown: share !== null,
+    confidence: offerSmallServings && share === null ? "low" : "ok",
   };
 }
 

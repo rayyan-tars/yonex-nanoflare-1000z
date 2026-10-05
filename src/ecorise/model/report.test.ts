@@ -161,3 +161,13 @@ describe("plan risk", () => {
     expect(narrow.shortagePercent).toBeLessThan(wide.shortagePercent);
   });
 });
+
+describe("forecast confidence", () => {
+  it("is low only when small servings are on and nobody has given feedback", () => {
+    const on = { portionsPrepared: 110, offerSmallServings: true };
+    const off = { portionsPrepared: 110, offerSmallServings: false };
+    expect(planRisk(planningView(monday, NO_VOICE, on, NO_UPGRADES), true).confidence).toBe("low");
+    expect(planRisk(planningView(monday, { ...NO_VOICE, feedback: true }, on, NO_UPGRADES), true).confidence).toBe("ok");
+    expect(planRisk(planningView(monday, NO_VOICE, off, NO_UPGRADES), false).confidence).toBe("ok");
+  });
+});

@@ -1,6 +1,8 @@
 "use client";
 
 import { getScenario } from "../model/scenarios";
+import { prefersReducedMotion } from "../state/store";
+import { useAnimatedNumber } from "./Campus";
 import { useEco, useEcoEnv } from "./context";
 import { CoinIcon, GearIcon, HelpIcon, LeafIcon, LogoMark, PlayIcon, TargetIcon } from "./icons";
 
@@ -11,6 +13,8 @@ export function TopBar() {
   const scenarioId = useEco((s) => s.save.scenarioId);
   const def = getScenario(scenarioId).definition;
   const serving = useEco((s) => s.phase === "serving");
+  const reduced = useEco(prefersReducedMotion);
+  const shownCredits = useAnimatedNumber(credits - pending, reduced);
   return (
     <header className="eco-topbar">
       <div className="eco-bar eco-brand">
@@ -28,7 +32,7 @@ export function TopBar() {
           <span className="eco-sep" aria-hidden="true" />
           <span className="eco-chip" title="Eco Credits">
             <CoinIcon size={18} />
-            <span className="eco-chip__value">{credits - pending}</span>
+            <span className="eco-chip__value">{shownCredits}</span>
             <span className="sr-only">Eco Credits</span>
           </span>
           <span className="eco-sep" aria-hidden="true" />
@@ -54,6 +58,7 @@ export function TopBar() {
 export function Dock() {
   const { store, bus } = useEcoEnv();
   const selection = useEco((s) => s.selection);
+  const campus = useEco((s) => s.save.progress.campus);
   return (
     <div className="eco-dock">
       <div className="eco-goal">
@@ -69,6 +74,11 @@ export function Dock() {
       {selection !== "kitchen" && (
         <button type="button" className="eco-dock__btn" data-place="kitchen" onClick={() => store.actions.select("kitchen")}>
           <PlayIcon size={14} /> Plan lunch
+        </button>
+      )}
+      {campus.planningHubUnlocked && !campus.planningHubBuilt && (
+        <button type="button" className="eco-dock__btn eco-dock__btn--gold" onClick={store.actions.improveCampus}>
+          Improve campus
         </button>
       )}
       <button

@@ -29,6 +29,9 @@ export function createGame(parent: HTMLElement, deps: Omit<CitySceneDeps, "resol
     audio: { noAudio: true },
     input: { keyboard: false, gamepad: false },
     render: { antialias: true, powerPreference: "high-performance" },
+    // Keep game time close to real time on slower machines: no 120-frame
+    // start-up clamp (our own update code already caps large frame gaps).
+    fps: { panicMax: 0 },
     scale: {
       mode: Phaser.Scale.NONE,
       width: initial.w,

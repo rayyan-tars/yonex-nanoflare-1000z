@@ -10,7 +10,7 @@ import { CouncilPanel } from "./CouncilPanel";
 import { EcoContext, useEco, useEcoEnv, type EcoEnv } from "./context";
 import { GameCanvas } from "./GameCanvas";
 import { Dock, TopBar } from "./Hud";
-import { MeadowPanel } from "./MeadowPanel";
+import { BuildCard, BuildPrompt, BuiltCard, ConstructionHud, PlotInfo } from "./Campus";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
 import { ResultsPanel, ServiceHud } from "./Round";
 
@@ -138,8 +138,8 @@ function Shell({ fonts }: { fonts: Fonts }) {
 
   // Frame the kitchen, leftovers and bin beside the results card.
   useEffect(() => {
-    if (phase !== "results") return;
-    const raf = requestAnimationFrame(() => bus.emit("focus", { target: "results", insetRight: insetRight() }));
+    if (phase !== "results" && phase !== "built") return;
+    const raf = requestAnimationFrame(() => bus.emit("focus", { target: phase === "built" ? "meadow" : "results", insetRight: insetRight() }));
     return () => cancelAnimationFrame(raf);
   }, [phase, bus]);
 
@@ -159,11 +159,15 @@ function Shell({ fonts }: { fonts: Fonts }) {
             {phase === "planning" && <Dock />}
             <AnimatePresence>
               {phase === "serving" && round && <ServiceHud key={round.attemptId} round={round} figureSize={figureSize} />}
+              {phase === "building" && selection !== "meadow" && <BuildPrompt key="build-prompt" />}
+              {phase === "constructing" && <ConstructionHud key="constructing" />}
             </AnimatePresence>
             <div ref={panelSlotRef} className={`eco-panel-slot${phase === "results" ? " eco-panel-slot--wide" : ""}`}>
               <AnimatePresence mode="wait">
                 {phase === "planning" && selection === "kitchen" && <CouncilPanel key="kitchen" />}
-                {phase === "planning" && selection === "meadow" && <MeadowPanel key="meadow" />}
+                {phase === "planning" && selection === "meadow" && <PlotInfo key="meadow" />}
+                {phase === "building" && selection === "meadow" && <BuildCard key="build" />}
+                {phase === "built" && <BuiltCard key="built" />}
                 {phase === "results" && round && <ResultsPanel key={`results-${round.attemptId}`} round={round} />}
               </AnimatePresence>
             </div>

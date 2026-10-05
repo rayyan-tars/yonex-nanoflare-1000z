@@ -8,7 +8,9 @@ import {
   writeSave,
   type StorageLike,
 } from "./persistence";
-import { createEcoStore } from "./store";
+import { PLANNING_HUB_COST, createEcoStore, planningHubRefusal } from "./store";
+import { NO_VOICE, forecastRange, planningView } from "../model/planning";
+import { MONDAY_STEW, getScenario } from "../model/scenarios";
 
 class MemoryStorage implements StorageLike {
   map = new Map<string, string>();
@@ -245,5 +247,138 @@ describe("lunch rounds in the store", () => {
     const r = store.getState().round!;
     expect(r.report.stars.count).toBe(0);
     expect(store.getState().save.progress.best[r.report.scenarioId].wastePerMeal).toBeNull();
+  });
+});
+
+describe("Planning Hub progression", () => {
+  function fresh(storage = new MemoryStorage()) {
+    const store = createEcoStore({ initialSave: defaultSave(), loadStatus: "fresh", storage, systemReducedMotion: false });
+    store.actions.enterCity();
+    return { store, storage };
+  }
+  function playRound(store: ReturnType<typeof fresh>["store"], portions: number) {
+    store.actions.setPortions(portions);
+    store.actions.serveLunch();
+    store.actions.finishService();
+  }
+
+  it("stays locked until a round feeds everyone, then unlocks once", () => {
+    const { store } = fresh();
+    playRound(store, 90); // students go hungry
+    expect(store.getState().save.progress.campus.planningHubUnlocked).toBe(false);
+    expect(store.getState().round!.unlockedPlanningHub).toBe(false);
+    store.actions.tryAgain();
+    playRound(store, 130);
+    expect(store.getState().save.progress.campus.planningHubUnlocked).toBe(true);
+    expect(store.getState().round!.unlockedPlanningHub).toBe(true);
+    store.actions.tryAgain();
+    playRound(store, 130);
+    expect(store.getState().round!.unlockedPlanningHub).toBe(false);
+  });
+
+  it("cannot be bought while locked or without enough credits", () => {
+    const { store } = fresh();
+    store.actions.buildPlanningHub();
+    expect(store.getState().save.progress.campus.planningHubBuilt).toBe(false);
+    // Unlock with a fed round, then drain credits below the cost.
+    playRound(store, 140);
+    const s = store.getState();
+    expect(planningHubRefusal(s)).toBeNull();
+    (s.save.progress as { credits: number }).credits = PLANNING_HUB_COST - 1;
+    store.actions.buildPlanningHub();
+    expect(store.getState().save.progress.campus.planningHubBuilt).toBe(false);
+    expect(planningHubRefusal(store.getState())).toBe("not-enough-credits");
+  });
+
+  it("deducts the cost exactly once and never builds twice", () => {
+    const { store, storage } = fresh();
+    playRound(store, 140);
+    const before = store.getState().save.progress.credits;
+    store.actions.improveCampus();
+    expect(store.getState().phase).toBe("building");
+    store.actions.buildPlanningHub();
+    store.actions.buildPlanningHub();
+    expect(store.getState().phase).toBe("constructing");
+    expect(store.getState().save.progress.credits).toBe(before - PLANNING_HUB_COST);
+    store.actions.finishConstruction();
+    store.actions.buildPlanningHub();
+    expect(store.getState().save.progress.credits).toBe(before - PLANNING_HUB_COST);
+    // Written immediately: a reload mid-construction keeps the hub and the payment.
+    const reloaded = loadSave(storage).data;
+    expect(reloaded.progress.campus.planningHubBuilt).toBe(true);
+    expect(reloaded.progress.credits).toBe(before - PLANNING_HUB_COST);
+  });
+
+  it("persists after reload and changes the forecast without revealing attendance", () => {
+    const { store, storage } = fresh();
+    playRound(store, 140);
+    store.actions.improveCampus();
+    store.actions.buildPlanningHub();
+    store.actions.finishConstruction();
+    store.flush();
+    const again = createEcoStore({ initialSave: loadSave(storage).data, loadStatus: "loaded", storage, systemReducedMotion: false });
+    expect(again.getState().upgrades.planningOffice).toBe(true);
+    const scenario = getScenario(MONDAY_STEW.id);
+    const without = forecastRange(scenario, { rsvp: false, planningOffice: false });
+    const withHub = planningView(scenario, NO_VOICE, again.getState().save.draft.policy, again.getState().upgrades).forecast;
+    expect(withHub.high - withHub.low).toBeLessThan(without.high - without.low);
+    expect(withHub.high - withHub.low).toBeGreaterThan(0);
+    expect(withHub.low).toBeLessThanOrEqual(scenario.actualAttendance);
+    expect(withHub.high).toBeGreaterThanOrEqual(scenario.actualAttendance);
+  });
+
+  it("the hub's forecast is used by the next lunch, and simulation outcomes stay deterministic", () => {
+    const { store } = fresh();
+    playRound(store, 140);
+    const firstReport = store.getState().round!.report;
+    store.actions.improveCampus();
+    store.actions.buildPlanningHub();
+    store.actions.finishConstruction();
+    store.actions.tryAgain();
+    store.actions.setPortions(140);
+    store.actions.serveLunch();
+    const r = store.getState().round!;
+    expect(r.report.forecast.planningOffice).toBe(true);
+    // Information changes; what happens with the same cooking plan does not.
+    expect(r.report.player.result).toEqual(firstReport.player.result);
+    expect(r.credited).toBe(0);
+  });
+
+  it("replays never re-award construction or unlock rewards", () => {
+    const { store } = fresh();
+    playRound(store, 140);
+    store.actions.improveCampus();
+    store.actions.buildPlanningHub();
+    store.actions.finishConstruction();
+    const credits = store.getState().save.progress.credits;
+    for (let i = 0; i < 3; i++) {
+      store.actions.tryAgain();
+      playRound(store, 140);
+      expect(store.getState().round!.unlockedPlanningHub).toBe(false);
+    }
+    expect(store.getState().save.progress.credits).toBe(credits);
+  });
+
+  it("reset removes the building and refunds nothing extra", () => {
+    const { store, storage } = fresh();
+    playRound(store, 140);
+    store.actions.improveCampus();
+    store.actions.buildPlanningHub();
+    store.actions.finishConstruction();
+    store.actions.resetAll();
+    expect(store.getState().save.progress.campus).toEqual({ planningHubUnlocked: false, planningHubBuilt: false });
+    expect(store.getState().save.progress.credits).toBe(defaultSave().progress.credits);
+    expect(store.getState().upgrades.planningOffice).toBe(false);
+    expect(loadSave(storage).status).toBe("fresh");
+  });
+
+  it("rejects a save that claims a hub was built without being unlocked", () => {
+    const storage = new MemoryStorage();
+    const bad = defaultSave();
+    bad.progress.campus = { planningHubUnlocked: false, planningHubBuilt: true };
+    storage.setItem(SAVE_KEY, JSON.stringify(bad));
+    const r = loadSave(storage);
+    expect(r.status).toBe("repaired");
+    expect(r.data.progress.campus.planningHubBuilt).toBe(false);
   });
 });

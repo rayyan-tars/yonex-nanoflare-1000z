@@ -27,8 +27,17 @@ export interface SaveData {
     best: Record<string, BestRecord>;
     /** Most recent round, for the top-bar indicators. */
     last: LastRound | null;
+    /** Campus progression. A building is only ever built once. */
+    campus: CampusState;
   };
 }
+
+export interface CampusState {
+  planningHubUnlocked: boolean;
+  planningHubBuilt: boolean;
+}
+
+export const DEFAULT_CAMPUS: CampusState = { planningHubUnlocked: false, planningHubBuilt: false };
 
 export interface BestRecord {
   stars: number;
@@ -51,7 +60,7 @@ export function defaultSave(): SaveData {
     onboardingDone: false,
     scenarioId: DEFAULT_SCENARIO_ID,
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
-    progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null },
+    progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null, campus: { ...DEFAULT_CAMPUS } },
   };
 }
 
@@ -150,6 +159,7 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     // Added after the first build: absent is normal, malformed is repaired.
     best: progress.best === undefined ? {} : fix(validBest(progress.best), progress.best as Record<string, BestRecord>, {}),
     last: progress.last === undefined || progress.last === null ? null : fix(validLast(progress.last), progress.last as LastRound, null),
+    campus: progress.campus === undefined ? { ...DEFAULT_CAMPUS } : fix(validCampus(progress.campus), progress.campus as CampusState, { ...DEFAULT_CAMPUS }),
   };
 
   return { data: out, repaired };
@@ -161,6 +171,16 @@ function validBest(raw: unknown): boolean {
   if (!isRecord(raw)) return false;
   return Object.values(raw).every(
     (b) => isRecord(b) && typeof b.stars === "number" && b.stars >= 0 && b.stars <= 3 && finiteOrNull(b.wastePerMeal),
+  );
+}
+
+function validCampus(raw: unknown): boolean {
+  return (
+    isRecord(raw) &&
+    typeof raw.planningHubUnlocked === "boolean" &&
+    typeof raw.planningHubBuilt === "boolean" &&
+    // A built hub must have been unlocked first.
+    (!raw.planningHubBuilt || raw.planningHubUnlocked)
   );
 }
 

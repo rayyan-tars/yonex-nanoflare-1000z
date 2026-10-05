@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import type { Bus } from "../state/bus";
 import { prefersReducedMotion, type EcoState, type EcoStore, type Selection } from "../state/store";
 import { iso, type BakedTexture, type V2 } from "./art/iso";
-import { FLUE_TOP, GROUND_DEPTH, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
+import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
 import { CitizenCrowd } from "./citizens";
 import {
   BARRIER_POSTS,
@@ -36,7 +36,7 @@ export interface CitySceneDeps {
   onError(error: unknown): void;
 }
 
-type Target = "kitchen" | "noticeboard" | "meadow";
+type Target = "kitchen" | "noticeboard" | "meadow" | "hub";
 
 const DEPTH = { ground: -10000, decal: -9000, ui: 100000 } as const;
 /** Depth for something whose ground centre is at grid (x, y). */
@@ -74,10 +74,22 @@ export class CityScene extends Phaser.Scene {
   private cook!: Phaser.GameObjects.Image;
   private targets = new Map<Target, Phaser.GameObjects.Image>();
   private labels = new Set<Phaser.GameObjects.Text>();
-  private selRings: Record<Target, Phaser.GameObjects.Image> = {} as never;
+  private selRings: Record<"kitchen" | "noticeboard" | "meadow", Phaser.GameObjects.Image> = {} as never;
   private voiceProps!: Record<"rsvp" | "feedback" | "smallPlease" | "sizes", Phaser.GameObjects.Image>;
   private sparkles: Phaser.GameObjects.Image[] = [];
   private plaques: Phaser.GameObjects.Image[] = [];
+  private campus!: {
+    meadow: Phaser.GameObjects.Image;
+    grounds: Phaser.GameObjects.Image;
+    hub: Phaser.GameObjects.Image;
+    scaffold: Phaser.GameObjects.Image;
+    lockPlaque: Phaser.GameObjects.Image;
+    buildPlaque: Phaser.GameObjects.Image;
+    hubPlaque: Phaser.GameObjects.Image;
+    dust: Phaser.GameObjects.Image[];
+  };
+  private construction: { timers: Phaser.Time.TimerEvent[]; done: boolean } | null = null;
+  private buildPulse: Phaser.Tweens.Tween | null = null;
   private reduced = false;
   private fitZoom = 1;
   private userZoom = 1;
@@ -113,8 +125,11 @@ export class CityScene extends Phaser.Scene {
       this.cleanups.push(bus.on("recenter", () => this.recenter()));
       this.cleanups.push(bus.on("serviceSpeed", (e) => this.director.setSpeed(e.speed)));
       this.cleanups.push(bus.on("serviceSkip", () => this.director.skip()));
+      this.cleanups.push(bus.on("constructionSkip", () => this.skipConstruction()));
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
       this.events.once(Phaser.Scenes.Events.DESTROY, () => this.teardown());
+      // Debug builds (?debug=1) expose the scene for inspection in devtools.
+      if (this.deps.debugEl) (window as unknown as { __ecoScene?: CityScene }).__ecoScene = this;
       this.deps.onReady();
     } catch (error) {
       this.deps.onError(error);
@@ -265,7 +280,27 @@ export class CityScene extends Phaser.Scene {
     const plaque = (tex: BakedTexture, at: V2) =>
       this.add.image(at.x, at.y, tex.key, tex.frame).setOrigin(tex.originX, tex.originY).setScale(1 / tex.scale).setDepth(DEPTH.ui - 30);
     this.plaques.push(plaque(a.plaqueCafeteria, iso(KITCHEN.x + 1.2, KITCHEN.y + 1.6, 96)));
-    this.plaques.push(plaque(a.plaquePlot, iso(MEADOW.x + MEADOW.w / 2, MEADOW.y + MEADOW.d / 2, 26)));
+    const plotTop = iso(MEADOW.x + MEADOW.w / 2, MEADOW.y + MEADOW.d / 2, 26);
+    const hubTop = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, HUB.h + 30);
+    const hubDepth = depthAt(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2);
+    const hub = this.put(a.hub, MEADOW.x, MEADOW.y, hubDepth).setVisible(false);
+    this.makeTarget("hub", hub, this.boxHitArea(a.hub, hub, HUB.w, HUB.d, HUB.h + 12, HUB.x, HUB.y));
+    this.campus = {
+      meadow,
+      grounds: this.put(a.hubGrounds, MEADOW.x, MEADOW.y, DEPTH.decal + 2).setVisible(false),
+      hub,
+      scaffold: this.put(a.scaffold, MEADOW.x, MEADOW.y, hubDepth + 0.5).setVisible(false),
+      lockPlaque: plaque(a.plaquePlot, plotTop),
+      buildPlaque: plaque(a.plaqueBuild, plotTop).setVisible(false),
+      hubPlaque: plaque(a.plaqueHub, hubTop).setVisible(false),
+      dust: Array.from({ length: 8 }, () =>
+        this.add
+          .image(0, 0, a.puff.key, a.puff.frame)
+          .setTint(0xc9ad83)
+          .setVisible(false)
+          .setDepth(hubDepth + 1),
+      ),
+    };
 
     this.director = new ServiceDirector(
       this,
@@ -295,9 +330,14 @@ export class CityScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 1)
       .setDepth(DEPTH.ui + 2);
+    t.setData("base", { x: p.x, y: p.y });
     this.labels.add(t);
-    t.once(Phaser.GameObjects.Events.DESTROY, () => this.labels.delete(t));
+    t.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.labels.delete(t);
+      this.layoutLabels();
+    });
     this.applyLabelScale(t);
+    this.layoutLabels();
     if (!this.reduced) {
       t.setAlpha(0);
       this.tweens.add({ targets: t, alpha: 1, duration: 240 });
@@ -309,9 +349,177 @@ export class CityScene extends Phaser.Scene {
     t.setScale(1 / (this.fitZoom * this.userZoom));
   }
 
+  /** Keeps world labels from overlapping at any zoom by nudging later ones upward. */
+  private layoutLabels() {
+    const list = [...this.labels].sort((a, b) => (b.getData("base").y as number) - (a.getData("base").y as number));
+    const gap = 4 / (this.fitZoom * this.userZoom);
+    const placed: Phaser.Geom.Rectangle[] = [];
+    for (const t of list) {
+      const base = t.getData("base") as { x: number; y: number };
+      let y = base.y;
+      const w = t.displayWidth;
+      const h = t.displayHeight;
+      for (let guard = 0; guard < 8; guard++) {
+        const rect = new Phaser.Geom.Rectangle(base.x - w / 2, y - h, w, h);
+        const hit = placed.find((r) => Phaser.Geom.Intersects.RectangleToRectangle(r, rect));
+        if (!hit) break;
+        y = hit.y - gap;
+      }
+      t.setPosition(base.x, y);
+      placed.push(new Phaser.Geom.Rectangle(base.x - w / 2, y - h, w, h));
+    }
+  }
+
   private positionCook(t: number) {
     const p = iso(KITCHEN.x + 0.45 + t * 1.1, KITCHEN.y);
     this.cook.setPosition(p.x, p.y);
+  }
+
+  // ---------------------------------------------------------------- campus
+
+  /** Shows the plot, the build prompt or the finished hub to match the save. */
+  private syncCampus(state: EcoState) {
+    const c = this.campus;
+    const { planningHubBuilt: built, planningHubUnlocked: unlocked } = state.save.progress.campus;
+    c.meadow.setVisible(!built);
+    c.grounds.setVisible(built).setAlpha(1);
+    c.hub.setVisible(built).setAlpha(1).setCrop();
+    c.scaffold.setVisible(false);
+    c.hubPlaque.setVisible(built).setScale(1 / this.art.plaqueHub.scale);
+    c.lockPlaque.setVisible(!built && !unlocked);
+    const promptBuild = !built && unlocked;
+    c.buildPlaque.setVisible(promptBuild);
+    const pulse = promptBuild && (state.phase === "building" || state.phase === "planning") && !this.reduced;
+    if (pulse && !this.buildPulse) {
+      const y = c.buildPlaque.y;
+      this.buildPulse = this.tweens.add({ targets: c.buildPlaque, y: y - 5, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+      c.buildPlaque.setData("baseY", y);
+    } else if (!pulse && this.buildPulse) {
+      this.buildPulse.remove();
+      this.buildPulse = null;
+      c.buildPlaque.setY(c.buildPlaque.getData("baseY") ?? c.buildPlaque.y);
+    }
+    // In build mode the plot ring stays lit so it is easy to find.
+    if (state.phase === "building") this.selRings.meadow.setVisible(true).setAlpha(1);
+  }
+
+  /** Ground prep → scaffolding → the hub rises → sign and a small celebration. */
+  private startConstruction() {
+    const c = this.campus;
+    this.buildPulse?.remove();
+    this.buildPulse = null;
+    this.selRings.meadow.setVisible(false);
+    c.buildPlaque.setVisible(false);
+    c.lockPlaque.setVisible(false);
+    this.focusOn("meadow", 0);
+    const timers: Phaser.Time.TimerEvent[] = [];
+    this.construction = { timers, done: false };
+    const finish = () => {
+      if (!this.construction || this.construction.done) return;
+      this.construction.done = true;
+      this.deps.store.actions.finishConstruction();
+    };
+    if (this.reduced) {
+      c.meadow.setVisible(false);
+      c.grounds.setVisible(true).setAlpha(1);
+      c.hub.setVisible(true).setAlpha(0).setCrop();
+      c.hubPlaque.setVisible(true);
+      this.tweens.add({ targets: c.hub, alpha: 1, duration: 300 });
+      timers.push(this.time.delayedCall(500, finish));
+      return;
+    }
+    const at = (ms: number, fn: () => void) => timers.push(this.time.delayedCall(ms, fn));
+    const centre = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, 0);
+    const dustBurst = (spread: number) => {
+      c.dust.forEach((d, i) => {
+        const a = (i / c.dust.length) * Math.PI * 2;
+        d.setPosition(centre.x + Math.cos(a) * spread * 0.6, centre.y + Math.sin(a) * spread * 0.3)
+          .setVisible(true)
+          .setAlpha(0.85)
+          .setScale(0.4);
+        this.tweens.add({
+          targets: d,
+          x: d.x + Math.cos(a) * spread,
+          y: d.y + Math.sin(a) * spread * 0.4 - 10,
+          scale: 1.2,
+          alpha: 0,
+          duration: 750,
+          ease: "Cubic.easeOut",
+        });
+      });
+    };
+    // 1. Ground preparation.
+    at(450, () => {
+      c.meadow.setVisible(false);
+      c.grounds.setVisible(true).setAlpha(0);
+      this.tweens.add({ targets: c.grounds, alpha: 1, duration: 400 });
+      dustBurst(34);
+    });
+    // 2. Scaffolding and foundation.
+    at(1050, () => {
+      const s = 1 / this.art.scaffold.scale;
+      c.scaffold.setVisible(true).setAlpha(0).setScale(s * 0.92);
+      this.tweens.add({ targets: c.scaffold, alpha: 1, scale: s, duration: 350, ease: "Back.easeOut" });
+    });
+    // 3. The building rises from its foundation.
+    at(1500, () => {
+      const hub = c.hub.setVisible(true).setAlpha(1);
+      const fw = hub.frame.width;
+      const fh = hub.frame.height;
+      hub.setCrop(0, fh, fw, 0);
+      const proxy = { p: 0 };
+      this.tweens.add({
+        targets: proxy,
+        p: 1,
+        duration: 2000,
+        ease: "Sine.easeInOut",
+        onUpdate: () => hub.setCrop(0, fh * (1 - proxy.p), fw, fh * proxy.p),
+        onComplete: () => hub.setCrop(),
+      });
+    });
+    at(2100, () => dustBurst(26));
+    at(2900, () => dustBurst(22));
+    // 4. Scaffolding comes down.
+    at(3600, () => this.tweens.add({ targets: c.scaffold, alpha: 0, duration: 450, onComplete: () => c.scaffold.setVisible(false) }));
+    // 5. Sign and celebration.
+    at(4100, () => {
+      const s = 1 / this.art.plaqueHub.scale;
+      c.hubPlaque.setVisible(true).setScale(0);
+      this.tweens.add({ targets: c.hubPlaque, scale: s, duration: 380, ease: "Back.easeOut" });
+      const top = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, HUB.h + 10);
+      this.sparkles.forEach((sp, i) => {
+        const a = (i / this.sparkles.length) * Math.PI * 2;
+        sp.setPosition(top.x, top.y).setVisible(true).setAlpha(1).setScale(0.2);
+        this.tweens.add({
+          targets: sp,
+          x: top.x + Math.cos(a) * 34,
+          y: top.y + Math.sin(a) * 18 - 8,
+          scale: 0.6,
+          alpha: 0,
+          duration: 850,
+          ease: "Cubic.easeOut",
+          onComplete: () => sp.setVisible(false),
+        });
+      });
+    });
+    at(5000, finish);
+  }
+
+  /** Jumps to the finished hub; the outcome is identical. */
+  private skipConstruction() {
+    const k = this.construction;
+    if (!k || k.done) return;
+    k.timers.forEach((t) => t.remove(false));
+    const c = this.campus;
+    this.tweens.killTweensOf([c.grounds, c.scaffold, c.hubPlaque, ...c.dust]);
+    c.dust.forEach((d) => d.setVisible(false));
+    c.meadow.setVisible(false);
+    c.grounds.setVisible(true).setAlpha(1);
+    c.scaffold.setVisible(false);
+    c.hub.setVisible(true).setAlpha(1).setCrop();
+    c.hubPlaque.setVisible(true).setScale(1 / this.art.plaqueHub.scale);
+    k.done = true;
+    this.time.delayedCall(150, () => this.deps.store.actions.finishConstruction());
   }
 
   // --------------------------------------------------------------- ambient
@@ -389,8 +597,21 @@ export class CityScene extends Phaser.Scene {
     }
     if (initial && state.phase !== "planning") this.director.reset();
 
+    // Campus progression.
+    if (!initial && prev && prev.phase !== state.phase) {
+      if (state.phase === "building") {
+        this.focusOn("meadow", 0);
+      } else if (state.phase === "constructing") {
+        this.director.reset();
+        this.crowd.setActive(true);
+        this.startConstruction();
+      }
+    }
+    if (state.phase !== "constructing") this.syncCampus(state);
+
     if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase) {
-      this.showSelection(state.introOpen || state.phase !== "planning" ? null : state.selection);
+      const sel = state.introOpen ? null : state.phase === "planning" || state.phase === "building" ? state.selection : null;
+      this.showSelection(sel);
     }
     const voice = state.save.draft.voice;
     const policy = state.save.draft.policy;
@@ -459,6 +680,7 @@ export class CityScene extends Phaser.Scene {
   private applyZoom() {
     this.cameras.main.setZoom(this.fitZoom * this.userZoom * this.deps.resolution);
     this.labels.forEach((t) => this.applyLabelScale(t));
+    this.layoutLabels();
   }
 
   private setupCamera() {
@@ -500,7 +722,7 @@ export class CityScene extends Phaser.Scene {
           ? SERVICE_VIEW
           : target === "results"
             ? RESULTS_VIEW
-            : iso(MEADOW.x + MEADOW.w / 2, MEADOW.y + MEADOW.d / 2, 10);
+            : iso(MEADOW.x + MEADOW.w / 2 - 0.6, MEADOW.y + MEADOW.d / 2 + 0.6, 16);
     const { w, h } = this.cssSize();
     const freeW = Math.max(240, w - insetRight);
     const zc = cam.zoom;
@@ -547,11 +769,11 @@ export class CityScene extends Phaser.Scene {
       this.input.setDefaultCursor("default");
       if (!d || d.moved) return;
       const state = this.deps.store.getState();
-      if (state.phase !== "planning") return;
+      if (state.phase !== "planning" && state.phase !== "building") return;
       const hit = this.topTarget(p);
       const actions = this.deps.store.actions;
       if (hit === "kitchen" || hit === "noticeboard") actions.select("kitchen");
-      else if (hit === "meadow") actions.select("meadow");
+      else if (hit === "meadow" || hit === "hub") actions.select("meadow");
       else if (state.selection) actions.clearSelection();
     };
     this.input.on(Phaser.Input.Events.POINTER_UP, end);
@@ -572,10 +794,15 @@ export class CityScene extends Phaser.Scene {
 
   private topTarget(p: Phaser.Input.Pointer): Target | null {
     const s = this.deps.store.getState();
-    if (s.introOpen || s.phase !== "planning") return null;
+    if (s.introOpen || (s.phase !== "planning" && s.phase !== "building")) return null;
     const hits = this.input.hitTestPointer(p) as Phaser.GameObjects.Image[];
     let best: Phaser.GameObjects.Image | null = null;
-    for (const h of hits) if (h.getData("target") && (!best || h.depth > best.depth)) best = h;
+    for (const h of hits) {
+      if (!h.visible || !h.getData("target")) continue;
+      // While choosing a plot, only the plot responds.
+      if (s.phase === "building" && h.getData("target") !== "meadow") continue;
+      if (!best || h.depth > best.depth) best = h;
+    }
     return best ? (best.getData("target") as Target) : null;
   }
 

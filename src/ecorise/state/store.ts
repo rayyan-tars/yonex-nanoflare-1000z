@@ -1,6 +1,7 @@
 import { toggleVoiceAction } from "../model/planning";
 import { computeRoundReport, type RoundReport } from "../model/report";
 import { creditAttempt, type CreditReason } from "../model/rewards";
+import { BUILDING_COSTS } from "../model/config";
 import { getScenario } from "../model/scenarios";
 import { sanitizePortions } from "../model/simulation";
 import { NO_UPGRADES, type StudentVoiceAction, type Upgrades } from "../model/types";
@@ -15,10 +16,34 @@ import {
   writeSave,
 } from "./persistence";
 
+/** What the Planning Hub costs, in Eco Credits. */
+export const PLANNING_HUB_COST = BUILDING_COSTS.planningOffice;
+
+/** Upgrades in force, derived from what has been built. */
+export function upgradesOf(save: SaveData): Upgrades {
+  return save.progress.campus.planningHubBuilt ? { planningOffice: true, secondCounter: false } : NO_UPGRADES;
+}
+
+export type BuildRefusal = "locked" | "already-built" | "not-enough-credits" | "busy";
+
+/** Why the Planning Hub cannot be bought right now, or null if it can. */
+export function planningHubRefusal(state: EcoState): BuildRefusal | null {
+  const c = state.save.progress.campus;
+  if (c.planningHubBuilt) return "already-built";
+  if (!c.planningHubUnlocked) return "locked";
+  if (state.save.progress.credits < PLANNING_HUB_COST) return "not-enough-credits";
+  if (state.phase === "serving" || state.phase === "constructing") return "busy";
+  return null;
+}
+
 export type Selection = "kitchen" | "meadow" | null;
 export type Overlay = "about" | "settings" | "reset-confirm" | null;
 export type BootStatus = "loading" | "ready" | "error";
-export type Phase = "planning" | "serving" | "results";
+/**
+ * planning → serving → results → (building → constructing → built) → planning
+ * The build phases only happen when the Planning Hub is available.
+ */
+export type Phase = "planning" | "serving" | "results" | "building" | "constructing" | "built";
 
 /** One committed lunch service. Computed once when the player presses Serve. */
 export interface ActiveRound {
@@ -29,12 +54,14 @@ export interface ActiveRound {
   creditReason: CreditReason;
   /** Best value previously credited for this scenario, before this attempt. */
   previousBest: number;
+  /** True if this round unlocked the Planning Hub for the first time. */
+  unlockedPlanningHub: boolean;
 }
 
 export interface EcoState {
   /** Persisted portion. */
   save: SaveData;
-  /** Upgrades owned. Building is a Step 2 feature, so this is always empty for now. */
+  /** Upgrades in force (derived from the save; kept as a stable reference). */
   upgrades: Upgrades;
   /** Session-only UI state. */
   phase: Phase;
@@ -68,6 +95,11 @@ export interface EcoActions {
   finishService(): void;
   /** Back to planning the same day, keeping the last plan for adjustment. */
   tryAgain(): void;
+  /** From results: highlight the plot so the player can choose to build. */
+  improveCampus(): void;
+  /** Buys and starts building the Planning Hub. Pays exactly once. */
+  buildPlanningHub(): void;
+  finishConstruction(): void;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
   setSystemReducedMotion(value: boolean): void;
@@ -95,7 +127,7 @@ export function createEcoStore(options: {
 }): EcoStore {
   let state: EcoState = {
     save: options.initialSave,
-    upgrades: NO_UPGRADES,
+    upgrades: upgradesOf(options.initialSave),
     phase: "planning",
     round: null,
     boot: { status: "loading", message: null },
@@ -150,13 +182,14 @@ export function createEcoStore(options: {
         updateSave((s) => ({ ...s, onboardingDone: true }));
       },
       showIntro: () => {
-        if (state.phase === "serving") return;
+        if (state.phase === "serving" || state.phase === "constructing") return;
         set({ introOpen: true, selection: null, overlay: null }, false);
       },
 
       select: (selection: Selection) => {
-        if (state.introOpen || state.phase === "serving") return;
+        if (state.introOpen || state.phase === "serving" || state.phase === "constructing") return;
         if (state.phase === "results" && selection !== null) return;
+        if (state.phase === "building" && selection !== "meadow" && selection !== null) return;
         set({ selection, overlay: null }, false);
       },
       clearSelection: () => set({ selection: null }, false),
@@ -196,7 +229,7 @@ export function createEcoStore(options: {
         const report = computeRoundReport(scenario, {
           voice: save.draft.voice,
           policy: save.draft.policy,
-          upgrades: state.upgrades,
+          upgrades: upgradesOf(save),
         });
         const attemptId = newAttemptId();
         const previousBest = save.progress.ledger.scenarios[save.scenarioId]?.bestCreditedValue ?? 0;
@@ -217,13 +250,23 @@ export function createEcoStore(options: {
                 : Math.min(prevBest.wastePerMeal, perMeal),
         };
         const res = report.player.result;
+        // Feeding everyone unlocks the Planning Hub (once).
+        const campus = save.progress.campus;
+        const unlockedNow = report.player.fed && !campus.planningHubUnlocked;
         // Reward, ledger and records change in one save so a reload can never pay twice.
         state = {
           ...state,
           phase: "serving",
           selection: null,
           overlay: null,
-          round: { attemptId, report, credited: credit.credited, creditReason: credit.reason, previousBest },
+          round: {
+            attemptId,
+            report,
+            credited: credit.credited,
+            creditReason: credit.reason,
+            previousBest,
+            unlockedPlanningHub: unlockedNow,
+          },
           save: {
             ...save,
             progress: {
@@ -236,6 +279,7 @@ export function createEcoStore(options: {
                 attendance: res.attendance,
                 wastePerMeal: report.player.waste.perMeal,
               },
+              campus: unlockedNow ? { ...campus, planningHubUnlocked: true } : campus,
             },
           },
         };
@@ -247,8 +291,38 @@ export function createEcoStore(options: {
         set({ phase: "results" }, false);
       },
       tryAgain: () => {
-        if (state.phase === "serving") return;
+        if (state.phase === "serving" || state.phase === "constructing") return;
         set({ phase: "planning", round: null, selection: "kitchen", overlay: null }, false);
+      },
+      improveCampus: () => {
+        if (state.phase !== "results" && state.phase !== "planning") return;
+        const c = state.save.progress.campus;
+        if (!c.planningHubUnlocked || c.planningHubBuilt) return;
+        set({ phase: "building", selection: null, overlay: null }, false);
+      },
+      buildPlanningHub: () => {
+        const refusal = planningHubRefusal(state);
+        if (refusal) {
+          if (refusal === "not-enough-credits") notify(`The Planning Hub needs ${PLANNING_HUB_COST} Eco Credits.`);
+          return;
+        }
+        const save = state.save;
+        const next: SaveData = {
+          ...save,
+          progress: {
+            ...save.progress,
+            credits: save.progress.credits - PLANNING_HUB_COST,
+            campus: { ...save.progress.campus, planningHubBuilt: true },
+          },
+        };
+        // Payment and the built flag are written together, immediately.
+        state = { ...state, save: next, upgrades: upgradesOf(next), phase: "constructing", selection: null, overlay: null };
+        listeners.forEach((l) => l());
+        persistNow();
+      },
+      finishConstruction: () => {
+        if (state.phase !== "constructing") return;
+        set({ phase: "built" }, false);
       },
 
       setMotion: (motion: MotionSetting) =>
@@ -268,7 +342,7 @@ export function createEcoStore(options: {
         set(
           {
             save: defaultSave(),
-            upgrades: NO_UPGRADES,
+            upgrades: upgradesOf(defaultSave()),
             phase: "planning",
             round: null,
             introOpen: true,

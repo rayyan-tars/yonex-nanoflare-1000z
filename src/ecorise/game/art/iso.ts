@@ -209,7 +209,8 @@ export class AtlasBuilder {
     const texture = this.scene.textures.addCanvas(this.atlasKey, canvas);
     if (!texture) throw new Error("Could not create the art atlas");
     for (const p of placed) {
-      texture.add(p.item.name, 0, p.x, p.y, p.item.canvas.width, p.item.canvas.height);
+      const frame = texture.add(p.item.name, 0, p.x, p.y, p.item.canvas.width, p.item.canvas.height);
+      if (!frame) throw new Error(`Atlas frame missing: ${p.item.name}`);
       p.item.tex.key = this.atlasKey;
       p.item.tex.frame = p.item.name;
     }

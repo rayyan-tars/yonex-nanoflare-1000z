@@ -529,7 +529,7 @@ export class ServiceDirector {
     const res = r.player.result;
     const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
     if (surplus > 0) {
-      this.extras.push(this.hooks.makeLabel(`Never served · ${fmt(surplus)} portions`, { x: 12.4, y: 5.0, z: 26 }, surplus >= 10 ? "warn" : "neutral"));
+      this.extras.push(this.hooks.makeLabel(`Never served · ${fmt(surplus)} portions`, { x: 11.5, y: 6.0, z: 28 }, surplus >= 10 ? "warn" : "neutral"));
     }
     if (r.player.waste.plateWaste > 0) {
       this.extras.push(

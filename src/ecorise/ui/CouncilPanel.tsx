@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { BALANCE } from "../model/config";
-import { planRisk, planningView, voiceTokensUsed, type PlanningView } from "../model/planning";
+import { forecastRange, planRisk, planningView, voiceTokensUsed, type PlanningView } from "../model/planning";
 import { getScenario } from "../model/scenarios";
 import type { StudentVoiceAction } from "../model/types";
 import { useEco, useEcoEnv } from "./context";
@@ -46,6 +46,8 @@ export function CouncilPanel() {
   const scenario = getScenario(scenarioId);
   const view = useMemo(() => planningView(scenario, voice, policy, upgrades), [scenario, voice, policy, upgrades]);
   const risk = useMemo(() => planRisk(view, policy.offerSmallServings), [view, policy.offerSmallServings]);
+  // With the Planning Hub built, show the range it replaced so the benefit is visible.
+  const before = upgrades.planningOffice ? forecastRange(scenario, { rsvp: voice.rsvp, planningOffice: false }) : null;
   const used = voiceTokensUsed(voice);
   const max = BALANCE.maxStudentVoiceTokens;
   const def = scenario.definition;
@@ -123,33 +125,37 @@ export function CouncilPanel() {
             Any number in the range is equally likely. Cook more and fewer students miss out, but more food may be wasted.
           </InfoTip>
         </div>
-        <Forecast view={view} />
+        <Forecast view={view} before={before} />
         <Portions view={view} />
-        <div className="eco-risk" aria-live="polite">
-          <div className="eco-risk__item">
-            <div className="eco-risk__row">
-              <span>Shortage risk</span>
-              <strong>{risk.shortagePercent}%</strong>
+        {risk.confidence === "low" ? (
+          <div className="eco-confidence" aria-live="polite">
+            <span className="eco-confidence__badge">Forecast confidence: low</span>
+            <span>Preference data missing. Without Feedback the kitchen can&rsquo;t tell how far small servings will stretch the food.</span>
+          </div>
+        ) : (
+          <div className="eco-risk" aria-live="polite">
+            <div className="eco-risk__item">
+              <div className="eco-risk__row">
+                <span>Shortage risk</span>
+                <strong>{risk.shortagePercent}%</strong>
+              </div>
+              <div className="eco-meter eco-meter--short" aria-hidden="true">
+                <span style={{ width: `${risk.shortagePercent}%` }} />
+              </div>
             </div>
-            <div className="eco-meter eco-meter--short" aria-hidden="true">
-              <span style={{ width: `${risk.shortagePercent}%` }} />
+            <div className="eco-risk__item">
+              <div className="eco-risk__row">
+                <span>Likely waste</span>
+                <strong>
+                  ~{risk.expectedWaste}
+                  {!risk.plateWasteKnown && "+"}
+                </strong>
+              </div>
+              <div className="eco-meter eco-meter--waste" aria-hidden="true">
+                <span style={{ width: `${Math.min(100, (risk.expectedWaste / 40) * 100)}%` }} />
+              </div>
             </div>
           </div>
-          <div className="eco-risk__item">
-            <div className="eco-risk__row">
-              <span>Likely waste</span>
-              <strong>
-                ~{risk.expectedWaste}
-                {!risk.plateWasteKnown && "+"}
-              </strong>
-            </div>
-            <div className="eco-meter eco-meter--waste" aria-hidden="true">
-              <span style={{ width: `${Math.min(100, (risk.expectedWaste / 40) * 100)}%` }} />
-            </div>
-          </div>
-        </div>
-        {policy.offerSmallServings && !risk.plateWasteKnown && (
-          <p className="eco-hint-line">Risk assumes full portions. Feedback shows how far small servings stretch the food.</p>
         )}
         <label className="eco-switch">
           <input
@@ -175,7 +181,7 @@ export function CouncilPanel() {
   );
 }
 
-function Forecast({ view }: { view: PlanningView }) {
+function Forecast({ view, before }: { view: PlanningView; before: { low: number; high: number } | null }) {
   const pos = (n: number) => `${((Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, n)) - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN)) * 100}%`;
   const { low, high, basis } = view.forecast;
   return (
@@ -188,6 +194,12 @@ function Forecast({ view }: { view: PlanningView }) {
         <div className="eco-forecast__mid">
           Expected students
           {basis === "rsvp" && <span className="eco-forecast__tag">RSVP</span>}
+          {view.forecast.planningOffice && <span className="eco-forecast__tag eco-forecast__tag--hub">Planning Hub</span>}
+          {before && (
+            <span className="eco-forecast__was">
+              was {before.low}–{before.high}
+            </span>
+          )}
         </div>
         <div style={{ textAlign: "right" }}>
           <div className="eco-forecast__lab">High</div>
