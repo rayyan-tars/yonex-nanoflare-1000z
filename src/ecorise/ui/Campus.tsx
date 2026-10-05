@@ -37,6 +37,24 @@ export function useAnimatedNumber(value: number, reduced: boolean, duration = 70
   return reduced ? value : shown;
 }
 
+/** Counts from 0 up to `target` after `delay` ms (shows the target at once with reduced motion). */
+export function useCountUp(target: number, reduced: boolean, delay = 0, duration = 900) {
+  const [v, setV] = useState(0);
+  useEffect(() => {
+    if (reduced) return;
+    let raf = 0;
+    const start = performance.now() + delay;
+    const tick = (now: number) => {
+      const t = Math.max(0, Math.min(1, (now - start) / duration));
+      setV(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, reduced, delay, duration]);
+  return reduced ? target : v;
+}
+
 function useHubRanges() {
   const scenarioId = useEco((s) => s.save.scenarioId);
   const scenario = getScenario(scenarioId);

@@ -33,7 +33,9 @@ export function TopBar() {
           </span>
           <span className="eco-sep" aria-hidden="true" />
           <span className="eco-chip" title="Eco Credits">
-            <CoinIcon size={18} />
+            <span key={credits - pending} className="eco-coin-pop" aria-hidden="true">
+              <CoinIcon size={18} />
+            </span>
             <span className="eco-chip__value">{shownCredits}</span>
             <span className="sr-only">Eco Credits</span>
           </span>

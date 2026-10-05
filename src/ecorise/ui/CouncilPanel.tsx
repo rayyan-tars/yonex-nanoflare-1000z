@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { BALANCE } from "../model/config";
 import { forecastRange, planRisk, planningView, voiceTokensUsed, type PlanningView } from "../model/planning";
 import { getScenario } from "../model/scenarios";
+import { prefersReducedMotion } from "../state/store";
 import type { StudentVoiceAction } from "../model/types";
 import { useEco, useEcoEnv } from "./context";
 import { CheckIcon, ClipboardIcon, FeedbackIcon, PlayIcon, SmallBowlIcon } from "./icons";
@@ -57,11 +58,7 @@ export function CouncilPanel() {
       eyebrow={`${def.dayLabel} · ${def.dish}`}
       title="Lunch Council"
       onClose={store.actions.clearSelection}
-      footer={
-        <button type="button" className="eco-btn eco-btn--primary eco-btn--serve" onClick={store.actions.serveLunch}>
-          <PlayIcon size={16} /> Serve lunch
-        </button>
-      }
+      footer={<ServeButton />}
     >
       <section className="eco-step" aria-labelledby="eco-s1">
         <div className="eco-step__head">
@@ -178,6 +175,29 @@ export function CouncilPanel() {
         )}
       </section>
     </SidePanel>
+  );
+}
+
+/** Starting lunch should feel like an event: the button presses in, then service begins. */
+function ServeButton() {
+  const { store } = useEcoEnv();
+  const reduced = useEco(prefersReducedMotion);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      type="button"
+      className={`eco-btn eco-btn--primary eco-btn--serve${pressed ? " is-pressed" : ""}`}
+      disabled={pressed}
+      onClick={() => {
+        if (reduced) return store.actions.serveLunch();
+        setPressed(true);
+        window.setTimeout(() => store.actions.serveLunch(), 150);
+        // If lunch could not start, the button comes back.
+        window.setTimeout(() => setPressed(false), 1200);
+      }}
+    >
+      <PlayIcon size={16} /> Serve lunch
+    </button>
   );
 }
 

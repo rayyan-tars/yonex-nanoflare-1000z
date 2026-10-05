@@ -6,6 +6,7 @@ import {
   GRID,
   HOMES,
   KITCHEN,
+  YARD,
   MEADOW,
   TABLES,
   TRAY_RETURN,
@@ -805,6 +806,169 @@ export function boardNoteSketch(i: number): Sketch {
   return s;
 }
 
+/** Soft warm light, drawn additively (hatch lamps, hub windows, selection glow). */
+export function glowSketch(): Sketch {
+  const s = new Sketch();
+  s.custom([-30, -16, 30, 16], (ctx) => {
+    ctx.save();
+    ctx.scale(1, 0.5);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 30);
+    g.addColorStop(0, "rgba(255,214,140,0.85)");
+    g.addColorStop(0.45, "rgba(255,190,100,0.35)");
+    g.addColorStop(1, "rgba(255,170,80,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+  return s;
+}
+
+/** A small bird seen from below, wings up. */
+export function birdSketch(): Sketch {
+  const s = new Sketch();
+  s.custom([-6, -3, 6, 2], (ctx) => {
+    ctx.strokeStyle = "rgba(38,44,40,0.85)";
+    ctx.lineWidth = 0.9;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-5, -2);
+    ctx.quadraticCurveTo(-2.4, -2.6, 0, 0.6);
+    ctx.quadraticCurveTo(2.4, -2.6, 5, -2);
+    ctx.stroke();
+  });
+  return s;
+}
+
+/** Speech bubble with three dots: students chatting. Origin at the tail. */
+export function chatSketch(): Sketch {
+  const s = new Sketch();
+  s.custom([-6, -9, 6, 1], (ctx) => {
+    ctx.fillStyle = "rgba(251,246,234,0.96)";
+    ctx.strokeStyle = "rgba(42,33,25,0.35)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.roundRect(-5.5, -8.5, 11, 6.4, 3);
+    ctx.moveTo(-1.2, -2.2);
+    ctx.lineTo(0, 0.4);
+    ctx.lineTo(1.4, -2.2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#3f6b3a";
+    for (const x of [-2.6, 0, 2.6]) {
+      ctx.beginPath();
+      ctx.arc(x, -5.3, 0.75, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  return s;
+}
+
+/** A school backpack left on the ground. Centred on local (0, 0). */
+export function backpackSketch(color: number): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 1.2, 4.4, 1.8, { fill: PAL.shadow, alpha: 0.25 });
+  s.box(-0.09, -0.06, 0, 0.18, 0.13, 6.5, wallShades(color), edge(0.4, 0.5));
+  s.box(-0.07, 0.07, 1.2, 0.14, 0.04, 3.2, wallShades(shade(color, 0.85)), edge(0.3, 0.4));
+  s.face([[-0.09, -0.06, 6.5], [0.09, -0.06, 6.5], [0.09, 0.07, 6.5], [-0.09, 0.07, 6.5]], shade(color, 1.12), edge(0.3, 0.4));
+  return s;
+}
+
+/** Chalk menu board (A-frame) outside the cafeteria, with the tray-and-leaf mark. */
+export function menuBoardSketch(fonts: ArtFonts): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 1.5, 9, 3, { fill: PAL.shadow, alpha: 0.22 });
+  s.face([[-0.2, 0.06, 0], [0.2, 0.06, 0], [0.18, -0.02, 22], [-0.18, -0.02, 22]], PAL.woodDark, edge(0.5));
+  s.face([[-0.17, 0.07, 3], [0.17, 0.07, 3], [0.155, 0.0, 20], [-0.155, 0.0, 20]], 0x24302b, null);
+  s.custom([-12, -30, 12, 0], (ctx) => {
+    wallText(ctx, "TODAY", iso(-0.12, 0.06, 16.4), { size: 2.6, color: "#e9c979", font: fonts.body, weight: 800, tracking: 0.3 });
+    ctx.strokeStyle = "rgba(243,236,221,0.75)";
+    ctx.lineWidth = 0.5;
+    for (const z of [13.2, 11, 8.8]) {
+      const a = iso(-0.12, 0.05, z);
+      const b = iso(0.1, 0.05, z);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // Tray-and-leaf mark.
+    const m = iso(0.02, 0.04, 5.6);
+    ctx.strokeStyle = "#f3ecdd";
+    ctx.lineWidth = 0.55;
+    ctx.beginPath();
+    ctx.ellipse(m.x, m.y, 2.6, 1.1, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#9fc05e";
+    ctx.beginPath();
+    ctx.moveTo(m.x, m.y - 0.4);
+    ctx.quadraticCurveTo(m.x + 0.4, m.y - 3.4, m.x + 2.6, m.y - 3.2);
+    ctx.quadraticCurveTo(m.x + 2, m.y - 0.8, m.x, m.y - 0.4);
+    ctx.fill();
+  });
+  return s;
+}
+
+/** Sorting bins and a bottle refill tap. Centred on local (0, 0). */
+export function ecoStationSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 2, 16, 5, { fill: PAL.shadow, alpha: 0.22 });
+  const bins: [number, number][] = [
+    [-0.36, 0x3f6b3a],
+    [-0.12, 0x3e6b7a],
+    [0.12, PAL.terracotta],
+  ];
+  for (const [x, lid] of bins) {
+    s.box(x, -0.1, 0, 0.2, 0.2, 9, wallShades(0xd7d2c6), edge(0.4, 0.5));
+    s.box(x - 0.01, -0.11, 9, 0.22, 0.22, 1.3, wallShades(lid), edge(0.4, 0.5));
+    s.face([[x + 0.04, 0.101, 4.5], [x + 0.16, 0.101, 4.5], [x + 0.16, 0.101, 6.8], [x + 0.04, 0.101, 6.8]], lid, null);
+  }
+  // Bottle refill column.
+  s.box(0.38, -0.08, 0, 0.16, 0.16, 15, wallShades(PAL.forestMid), edge(0.4, 0.5));
+  s.face([[0.41, 0.081, 6], [0.51, 0.081, 6], [0.51, 0.081, 11], [0.41, 0.081, 11]], 0x9fb9bf, edge(0.3, 0.4));
+  const drop = iso(0.46, 0.09, 13);
+  s.circle(drop.x, drop.y, 0.9, { fill: 0xe2c27a });
+  return s;
+}
+
+/** Mop bucket by the tray return. Centred on local (0, 0). */
+export function mopBucketSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 1, 5, 2, { fill: PAL.shadow, alpha: 0.22 });
+  s.box(-0.1, -0.08, 0, 0.2, 0.16, 5, wallShades(0xc9a24b), edge(0.4, 0.5));
+  s.line([iso(0, 0, 4), iso(0.08, -0.06, 22)], PAL.woodDark, 0.9);
+  s.ellipse(iso(0, 0, 4).x, iso(0, 0, 4).y, 2.4, 1, { fill: 0xd9d2c2 });
+  return s;
+}
+
+/** Small timber planter with greenery. Centred on local (0, 0). */
+export function planterSketch(variant: number): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 1.2, 9, 3, { fill: PAL.shadow, alpha: 0.2 });
+  s.box(-0.22, -0.12, 0, 0.44, 0.24, 4, wallShades(PAL.wood), edge(0.4, 0.5));
+  const rng = createRng(70 + variant);
+  for (let i = 0; i < 8; i++) {
+    const p = iso(-0.18 + rng() * 0.36, -0.08 + rng() * 0.16, 4 + rng() * 3);
+    s.circle(p.x, p.y, 1.5 + rng() * 1.4, { fill: rng() < 0.4 ? PAL.leafLight : PAL.leaf, stroke: OUTLINE, strokeAlpha: 0.15, width: 0.4 });
+  }
+  if (variant % 2) {
+    const f = iso(0.05, 0, 7.5);
+    s.circle(f.x, f.y, 1, { fill: 0xe8b04a });
+  }
+  return s;
+}
+
+/** Tray left on a table top. Centred on local (0, 0). */
+export function tableTraySketch(full: boolean): Sketch {
+  const s = new Sketch();
+  s.face([[-0.1, -0.07, 10.4], [0.1, -0.07, 10.4], [0.1, 0.07, 10.4], [-0.1, 0.07, 10.4]], 0x6f8b7a, edge(0.4, 0.5));
+  const p = iso(0, 0, 10.6);
+  s.ellipse(p.x, p.y, 2.4, 1.1, { fill: 0xfbf6ea });
+  if (full) s.ellipse(p.x, p.y - 0.2, 1.4, 0.6, { fill: PAL.stew });
+  return s;
+}
+
 /** Campus Sustainability Flag cloth: a leaf on forest green. */
 export function sustainFlagSketch(): Sketch {
   const s = new Sketch();
@@ -1253,7 +1417,8 @@ export function bubbleSketch(kind: "empty" | "time"): Sketch {
 export interface PersonLook {
   skin: string;
   hair: string;
-  style: "short" | "bob" | "ponytail" | "bun" | "curly" | "scarf";
+  style: "short" | "bob" | "ponytail" | "bun" | "curly" | "scarf" | "long" | "buzz";
+  glasses?: boolean;
   jumper: string;
   bottom: string;
   skirt: boolean;
@@ -1264,16 +1429,21 @@ const SKINS = ["#f0c9a4", "#d9a77c", "#b97f55", "#8c5a38", "#6a4128"];
 const HAIRS = ["#2a1d16", "#4a3022", "#7a4a2a", "#1c1714", "#a8743e"];
 const JUMPERS = ["#2f5a3c", "#273a5c", "#6b2f35", "#2f5a3c", "#3d4a52"];
 const BAGS = ["#b4573a", "#c9a24b", "#3e6b7a", "#6e5466", "#5f7f35"];
-const STYLES: PersonLook["style"][] = ["short", "bob", "ponytail", "curly", "bun", "short", "scarf", "bob"];
+const STYLES: PersonLook["style"][] = [
+  "short", "bob", "ponytail", "curly", "bun", "buzz", "scarf", "long",
+  "short", "curly", "long", "buzz", "ponytail", "bob",
+];
 
+/** Fourteen students: hair, skin, uniform and bag vary independently so nobody looks cloned. */
 export const PERSON_LOOKS: PersonLook[] = STYLES.map((style, i) => ({
   style,
-  skin: SKINS[(i * 3) % SKINS.length],
-  hair: HAIRS[(i * 2) % HAIRS.length],
-  jumper: JUMPERS[i % JUMPERS.length],
+  skin: SKINS[(i * 3 + (i >> 3)) % SKINS.length],
+  hair: style === "buzz" && i % 2 ? "#1c1714" : HAIRS[(i * 2 + (i >> 2)) % HAIRS.length],
+  glasses: i % 5 === 2 || i === 9,
+  jumper: JUMPERS[(i + (i >> 3)) % JUMPERS.length],
   bottom: i % 3 === 1 ? "#3a3f48" : "#4a4f58",
-  skirt: style === "bob" || style === "bun" || (style === "ponytail" && i % 2 === 0),
-  bag: BAGS[(i * 2 + 1) % BAGS.length],
+  skirt: style === "bob" || style === "bun" || style === "long" ? i % 2 === 1 || style === "bun" : style === "ponytail" && i % 2 === 0,
+  bag: BAGS[(i * 2 + 1 + (i >> 3)) % BAGS.length],
 }));
 
 /**
@@ -1397,6 +1567,11 @@ export function personSketch(look: PersonLook, facing: "front" | "back", frame: 
         ctx.ellipse(facing === "back" ? 0 : 4.6, hy + 2.5, 1.8, 3.6, 0.3, 0, Math.PI * 2);
         ctx.fill();
       }
+      if (look.style === "long") {
+        ctx.beginPath();
+        ctx.roundRect(-4.9, hy - 4.4, 9.8, 11.6, 3.6);
+        ctx.fill();
+      }
       ctx.fillStyle = look.skin;
       ctx.beginPath();
       ctx.arc(0, hy, 4.3, 0, Math.PI * 2);
@@ -1439,6 +1614,17 @@ export function personSketch(look: PersonLook, facing: "front" | "back", frame: 
       ctx.arc(-1.5, hy + 0.9, 0.48, 0, Math.PI * 2);
       ctx.arc(1.5, hy + 0.9, 0.48, 0, Math.PI * 2);
       ctx.fill();
+      if (look.glasses) {
+        ctx.strokeStyle = "rgba(40,32,26,0.85)";
+        ctx.lineWidth = 0.45;
+        ctx.beginPath();
+        ctx.arc(-1.5, hy + 0.9, 1.15, 0, Math.PI * 2);
+        ctx.moveTo(2.65, hy + 0.9);
+        ctx.arc(1.5, hy + 0.9, 1.15, 0, Math.PI * 2);
+        ctx.moveTo(-0.35, hy + 0.8);
+        ctx.lineTo(0.35, hy + 0.8);
+        ctx.stroke();
+      }
     }
   });
   return s;
@@ -1875,6 +2061,16 @@ export interface ArtCatalog {
   sustainFlag: BakedTexture;
   plaqueMission: BakedTexture;
   boardNotes: BakedTexture[];
+  glow: BakedTexture;
+  bird: BakedTexture;
+  chat: BakedTexture;
+  backpacks: BakedTexture[];
+  menuBoard: BakedTexture;
+  ecoStation: BakedTexture;
+  mopBucket: BakedTexture;
+  planters: BakedTexture[];
+  tableTrays: Record<"full" | "empty", BakedTexture>;
+  selYard: BakedTexture;
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -1943,8 +2139,18 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     flagCloth: b("flag-cloth", flagClothSketch()),
     missionBoard: b("mission-board", missionBoardSketch(fonts), 3),
     sustainFlag: b("sustain-flag", sustainFlagSketch(), 3),
-    plaqueMission: b("plaque-mission", plaqueSketch("Cafeteria Waste Audit", "audit", fonts), 3),
+    plaqueMission: b("plaque-mission", plaqueSketch("Waste Audit", "audit", fonts), 3),
     boardNotes: [0, 1, 2, 3, 4].map((i) => b(`board-note-${i}`, boardNoteSketch(i), 3)),
+    glow: b("glow", glowSketch()),
+    bird: b("bird", birdSketch(), 3),
+    chat: b("chat", chatSketch(), 3),
+    backpacks: [PAL.terracotta, 0x3e6b7a, PAL.gold].map((c, i) => b(`backpack-${i}`, backpackSketch(c), 3)),
+    menuBoard: b("menu-board", menuBoardSketch(fonts), 3),
+    ecoStation: b("eco-station", ecoStationSketch(), 3),
+    mopBucket: b("mop-bucket", mopBucketSketch(), 3),
+    planters: [0, 1].map((v) => b(`planter-${v}`, planterSketch(v), 3)),
+    tableTrays: { full: b("table-tray-full", tableTraySketch(true), 3), empty: b("table-tray-empty", tableTraySketch(false), 3) },
+    selYard: b("sel-yard", selectionSketch(YARD.w, YARD.d)),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

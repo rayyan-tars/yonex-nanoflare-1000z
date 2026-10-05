@@ -5,10 +5,12 @@ import { prefersReducedMotion, sustainabilityFlagRaised, type EcoState, type Eco
 import { iso, type BakedTexture, type V2 } from "./art/iso";
 import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
 import { CitizenCrowd } from "./citizens";
+import type { RoundReport } from "../model/report";
 import {
   BARRIER_POSTS,
   BENCH,
   CRATES,
+  DETAILS,
   FEEDBACK_BOX,
   FLAGPOLE,
   FLOWERBEDS,
@@ -22,10 +24,13 @@ import {
   SUSTAIN_FLAG,
   TABLES,
   TRAY_RETURN,
+  SEATS,
   TREES,
+  YARD,
+  jitter,
   tileAt,
 } from "./layout";
-import { ServiceDirector } from "./service";
+import { ServiceDirector, type ServiceMoment } from "./service";
 
 export interface CitySceneDeps {
   store: EcoStore;
@@ -94,6 +99,20 @@ export class CityScene extends Phaser.Scene {
     dust: Phaser.GameObjects.Image[];
   };
   private construction: { timers: Phaser.Time.TimerEvent[]; done: boolean } | null = null;
+  /** Warm light at the serving hatch: ambient, brighter when selected, full during lunch. */
+  private hatchGlow!: Phaser.GameObjects.Image;
+  private hubGlow!: Phaser.GameObjects.Image;
+  private hubGlowTween: Phaser.Tweens.Tween | null = null;
+  private hubPlanters: Phaser.GameObjects.Image[] = [];
+  private kitchenGold!: Phaser.GameObjects.Image;
+  /** Students eating at the terrace tables (seated, legs hidden by the bench). */
+  private eaters: Phaser.GameObjects.Image[] = [];
+  private eaterChat: Phaser.GameObjects.Image | null = null;
+  private bird!: Phaser.GameObjects.Image;
+  private birdTimer: Phaser.Time.TimerEvent | null = null;
+  private zoomTween: Phaser.Tweens.Tween | null = null;
+  /** The player's own zoom before lunch, restored afterwards. */
+  private preServiceZoom = 1;
   private buildPulse: Phaser.Tweens.Tween | null = null;
   private reduced = false;
   private fitZoom = 1;
@@ -229,6 +248,14 @@ export class CityScene extends Phaser.Scene {
       empty: this.put(a.pans.empty, KITCHEN.x, KITCHEN.y, kDepth + 0.2).setVisible(false),
     };
     const shutter = this.put(a.shutter, KITCHEN.x, KITCHEN.y, kDepth + 0.3).setVisible(false);
+    const hatch = iso(KITCHEN.x + 1.1, KITCHEN.y + KITCHEN.d + 0.25, 16);
+    this.hatchGlow = this.add
+      .image(hatch.x, hatch.y, a.glow.key, a.glow.frame)
+      .setScale(1.2 / a.glow.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.22)
+      .setDepth(kDepth + 0.35);
+    this.kitchenGold = this.put(a.selKitchen, KITCHEN.x, KITCHEN.y, DEPTH.decal + 1.5).setTint(0xe2c27a).setVisible(false);
     this.voiceProps = {
       sizes: this.put(a.sizesSign, KITCHEN.x, KITCHEN.y, kDepth + 0.4).setVisible(false),
       smallPlease: this.put(a.smallPleaseSign, 7, 8, depthAt(7.5, 8.5)).setVisible(false),
@@ -288,14 +315,45 @@ export class CityScene extends Phaser.Scene {
       .setDepth(depthAt(FLAGPOLE.x + 0.5, FLAGPOLE.y + 0.5) + 0.1);
 
     for (const h of HOMES) this.put(a.homes[h.id], h.x, h.y, depthAt(h.x + 0.5, h.y + 0.5));
+    // Scenery is nudged off the grid so the campus looks planted, not stamped.
     TREES.forEach((t, i) => {
-      const img = this.put(a.trees[`${t.kind}-${i % 2}`], t.x, t.y, depthAt(t.x + 0.5, t.y + 0.5));
+      const j = jitter(i + 3, t.kind === "bush" ? 0.2 : 0.16);
+      const img = this.put(a.trees[`${t.kind}-${i % 2}`], t.x + j.x, t.y + j.y, depthAt(t.x + 0.5 + j.x, t.y + 0.5 + j.y));
       if (t.kind !== "bush") this.trees.push(img);
     });
     TABLES.forEach((t) => this.put(a.table, t.x, t.y, depthAt(t.x + 0.5, t.y + 0.5) - 0.3));
     LAMPS.forEach((l) => this.put(a.lamp, l.x, l.y, depthAt(l.x + 0.5, l.y + 0.5)));
     FLOWERBEDS.forEach((f, i) => this.put(a.flowerbeds[i % a.flowerbeds.length], f.x, f.y, depthAt(f.x + 0.5, f.y + 0.5)));
     this.put(a.crates, CRATES.x, CRATES.y, depthAt(CRATES.x + 0.5, CRATES.y + 0.5));
+
+    // Signs of school life.
+    const detail = (tex: BakedTexture, at: { x: number; y: number }, lift = 0) => this.put(tex, at.x, at.y, depthAt(at.x, at.y) + lift);
+    detail(a.menuBoard, DETAILS.menuBoard);
+    detail(a.ecoStation, DETAILS.ecoStation);
+    detail(a.mopBucket, DETAILS.mopBucket);
+    DETAILS.backpacks.forEach((b) => detail(a.backpacks[b.look], b));
+    // Trays sit on the table tops, so they sort just above their table.
+    DETAILS.tableTrays.forEach((t) =>
+      this.put(a.tableTrays[t.full ? "full" : "empty"], t.x, t.y, depthAt(Math.floor(t.x) + 0.5, Math.floor(t.y) + 0.5) - 0.2),
+    );
+    this.hubPlanters = DETAILS.hubPlanters.map((pl) => detail(a.planters[pl.v], pl).setVisible(false));
+
+    // Students eating at the terrace tables.
+    this.eaters = SEATS.map((seat, i) => {
+      const look = a.people[(i * 5 + 2) % a.people.length];
+      const tex = look[seat.facing][0];
+      const p = iso(seat.x, seat.y);
+      const img = this.add
+        .image(p.x, p.y + 6, tex.key, tex.frame)
+        .setOrigin(tex.originX, tex.originY)
+        .setScale(1 / tex.scale)
+        .setFlipX(i % 2 === 1)
+        .setDepth(p.y + 0.5)
+        .setVisible(false);
+      const feet = tex.originY * img.frame.height;
+      img.setCrop(0, 0, img.frame.width, feet - 10 * tex.scale);
+      return img;
+    });
 
     // Kitchen flue steam (a small pool reused forever).
     const flue = iso(KITCHEN.x + FLUE_TOP[0], KITCHEN.y + FLUE_TOP[1], FLUE_TOP[2]);
@@ -334,6 +392,14 @@ export class CityScene extends Phaser.Scene {
     const hubTop = iso(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2, HUB.h + 30);
     const hubDepth = depthAt(MEADOW.x + HUB.x + HUB.w / 2, MEADOW.y + HUB.y + HUB.d / 2);
     const hub = this.put(a.hub, MEADOW.x, MEADOW.y, hubDepth).setVisible(false);
+    const hubDoor = iso(MEADOW.x + HUB.x + 0.7, MEADOW.y + HUB.y + HUB.d + 0.2, 14);
+    this.hubGlow = this.add
+      .image(hubDoor.x, hubDoor.y, a.glow.key, a.glow.frame)
+      .setScale(1 / a.glow.scale)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0)
+      .setDepth(hubDepth + 0.6)
+      .setVisible(false);
     this.makeTarget("hub", hub, this.boxHitArea(a.hub, hub, HUB.w, HUB.d, HUB.h + 12, HUB.x, HUB.y));
     this.campus = {
       meadow,
@@ -355,15 +421,138 @@ export class CityScene extends Phaser.Scene {
     this.director = new ServiceDirector(
       this,
       a,
-      { pans, shutter, scraps, sparkles: this.sparkles },
+      {
+        pans,
+        shutter,
+        scraps,
+        sparkles: this.sparkles,
+        yardRing: this.put(a.selYard, YARD.x, YARD.y, DEPTH.decal + 1).setTint(0xe8a04a).setVisible(false),
+      },
       {
         onProgress: (processed) => this.deps.bus.emit("serviceProgress", { processed }),
         onDone: () => this.deps.store.actions.finishService(),
         makeLabel: (text, at, tone) => this.makeLabel(text, at, tone),
         isReduced: () => this.reduced,
+        onMoment: (moment, report) => this.onServiceMoment(moment, report),
       },
       this.deps.quality === "performance" ? 20 : 30,
     );
+
+    this.bird = this.add.image(0, 0, a.bird.key, a.bird.frame).setScale(1 / a.bird.scale).setDepth(DEPTH.ui - 40).setVisible(false);
+  }
+
+  // --------------------------------------------------------- lunch moments
+
+  private glowTo(img: Phaser.GameObjects.Image, alpha: number, duration = 300) {
+    this.tweens.killTweensOf(img);
+    if (this.reduced || duration === 0) img.setAlpha(alpha);
+    else this.tweens.add({ targets: img, alpha, duration, ease: "Sine.easeOut" });
+  }
+
+  /** Smooth zoom about the view centre; instant with reduced motion. */
+  private zoomTo(z: number, duration: number) {
+    this.zoomTween?.remove();
+    this.zoomTween = null;
+    if (this.reduced || duration === 0) {
+      this.userZoom = z;
+      this.applyZoom();
+      return;
+    }
+    const proxy = { z: this.userZoom };
+    this.zoomTween = this.tweens.add({
+      targets: proxy,
+      z,
+      duration,
+      ease: "Sine.easeInOut",
+      onUpdate: () => {
+        this.userZoom = proxy.z;
+        this.applyZoom();
+      },
+    });
+  }
+
+  private onServiceMoment(moment: ServiceMoment, report: RoundReport) {
+    if (moment === "open") {
+      // Lunch has started: the hatch lights up and the camera leans in.
+      this.setEaters(0);
+      this.kitchenGold.setVisible(false);
+      this.hatchGlow.setAlpha(0.2);
+      this.glowTo(this.hatchGlow, 0.95, 450);
+      this.preServiceZoom = this.userZoom;
+      if (!this.reduced) this.zoomTo(Math.min(1.8, this.userZoom * 1.1), 800);
+      const cue = this.makeLabel("Lunch is served", { x: KITCHEN.x + 1.1, y: KITCHEN.y + KITCHEN.d + 0.2, z: 44 }, "neutral");
+      this.time.delayedCall(1300, () => cue.active && cue.destroy());
+      return;
+    }
+    if (moment === "food-out") {
+      // The last portion is gone: lights drop, a small jolt.
+      this.glowTo(this.hatchGlow, 0.05, 200);
+      if (!this.reduced) this.cameras.main.shake(180, 0.0022);
+      return;
+    }
+    // Finale: the terrace and lighting reflect how lunch went.
+    const great = report.stars.count === 3;
+    const fed = report.player.fed;
+    this.zoomTo(this.preServiceZoom, 700);
+    if (!report.timeline.foodRanOutAt) this.glowTo(this.hatchGlow, fed ? 0.35 : 0.15, 600);
+    this.setEaters(great ? 7 : fed ? 3 : 0, true);
+    if (great) {
+      const ring = this.kitchenGold.setVisible(true).setAlpha(0);
+      if (this.reduced) ring.setAlpha(0.45);
+      else this.tweens.add({ targets: ring, alpha: { from: 0, to: 0.9 }, duration: 500, yoyo: true, onComplete: () => ring.setAlpha(0.45) });
+    }
+  }
+
+  /** Shows `count` seated students at the terrace tables. */
+  private setEaters(count: number, animate = false) {
+    this.eaterChat?.destroy();
+    this.eaterChat = null;
+    this.eaters.forEach((e, i) => {
+      const show = i < count;
+      this.tweens.killTweensOf(e);
+      if (!show) {
+        e.setVisible(false);
+        return;
+      }
+      e.setVisible(true).setAlpha(1);
+      if (animate && !this.reduced) {
+        e.setAlpha(0);
+        this.tweens.add({ targets: e, alpha: 1, duration: 300, delay: 200 + i * 110 });
+      }
+    });
+    if (count >= 2 && !this.reduced) {
+      const e = this.eaters[0];
+      const t = this.art.chat;
+      this.eaterChat = this.add
+        .image(e.x + 4, e.y - 26, t.key, t.frame)
+        .setOrigin(t.originX, t.originY)
+        .setScale(1 / t.scale)
+        .setDepth(e.depth + 2000)
+        .setAlpha(0);
+      this.tweens.add({ targets: this.eaterChat, alpha: 1, duration: 200, delay: 900, hold: 1800, yoyo: true, repeat: -1, repeatDelay: 2600 });
+    }
+  }
+
+  /** Every so often a bird crosses the sky. */
+  private scheduleBird() {
+    this.birdTimer?.remove();
+    this.birdTimer = this.time.delayedCall(9000 + Math.random() * 16000, () => {
+      if (!this.reduced && this.deps.quality !== "performance") this.flyBird();
+      this.scheduleBird();
+    });
+  }
+
+  private flyBird() {
+    const view = this.cameras.main.worldView;
+    const y = view.y + view.height * (0.12 + Math.random() * 0.25);
+    const ltr = Math.random() < 0.5;
+    const x0 = ltr ? view.x - 20 : view.right + 20;
+    const x1 = ltr ? view.right + 20 : view.x - 20;
+    const s = 1 / this.art.bird.scale;
+    const b = this.bird.setPosition(x0, y).setVisible(true).setScale(s).setFlipX(!ltr);
+    this.tweens.killTweensOf(b);
+    this.tweens.add({ targets: b, x: x1, y: y - 30, duration: 7000, ease: "Linear", onComplete: () => b.setVisible(false) });
+    this.tweens.add({ targets: b, scaleY: { from: s, to: s * 0.35 }, duration: 180, yoyo: true, repeat: 18 });
   }
 
   private makeLabel(text: string, at: { x: number; y: number; z: number }, tone: keyof typeof LABEL_TONES) {
@@ -438,6 +627,7 @@ export class CityScene extends Phaser.Scene {
     c.hub.setVisible(built).setAlpha(1).setCrop();
     c.scaffold.setVisible(false);
     c.hubPlaque.setVisible(built).setScale(1 / this.art.plaqueHub.scale);
+    this.setHubLights(built, false);
     c.lockPlaque.setVisible(!built && !unlocked);
     const promptBuild = !built && unlocked;
     c.buildPlaque.setVisible(promptBuild);
@@ -476,6 +666,37 @@ export class CityScene extends Phaser.Scene {
       this.tweens.add({ targets: b.badge, scale: { from: s * 1.5, to: s }, duration: 420, ease: "Back.easeOut" });
     }
     b.shown = done;
+  }
+
+  /** Hub windows lit and planters out once it stands; students visit it more. */
+  private setHubLights(on: boolean, animate: boolean) {
+    this.hubPlanters.forEach((pl, i) => {
+      if (on === pl.visible) return;
+      pl.setVisible(on).setAlpha(1);
+      if (on && animate && !this.reduced) {
+        const s = pl.scale;
+        pl.setScale(0);
+        this.tweens.add({ targets: pl, scale: s, duration: 320, delay: i * 140, ease: "Back.easeOut" });
+      }
+    });
+    this.crowd?.setHubBuilt(on);
+    if (on === this.hubGlow.visible) return;
+    this.hubGlowTween?.remove();
+    this.hubGlowTween = null;
+    this.hubGlow.setVisible(on);
+    if (!on) return;
+    this.hubGlow.setAlpha(animate && !this.reduced ? 0 : 0.45);
+    if (this.reduced) return;
+    // A slow pulse from the information screen inside.
+    this.hubGlowTween = this.tweens.add({
+      targets: this.hubGlow,
+      alpha: { from: 0.32, to: 0.58 },
+      duration: 2200,
+      delay: animate ? 400 : 0,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
   }
 
   /** The Campus Sustainability Flag: hidden, or raised up its pole once. */
@@ -538,6 +759,7 @@ export class CityScene extends Phaser.Scene {
       c.grounds.setVisible(true).setAlpha(1);
       c.hub.setVisible(true).setAlpha(0).setCrop();
       c.hubPlaque.setVisible(true);
+      this.setHubLights(true, false);
       this.tweens.add({ targets: c.hub, alpha: 1, duration: 300 });
       timers.push(this.time.delayedCall(500, finish));
       return;
@@ -594,6 +816,11 @@ export class CityScene extends Phaser.Scene {
     at(2100, () => dustBurst(26));
     at(2900, () => dustBurst(22));
     // 4. Scaffolding comes down.
+    // The building settles: a soft thud of dust.
+    at(3520, () => {
+      dustBurst(40);
+      this.cameras.main.shake(140, 0.0018);
+    });
     at(3600, () => this.tweens.add({ targets: c.scaffold, alpha: 0, duration: 450, onComplete: () => c.scaffold.setVisible(false) }));
     // 5. Sign and celebration.
     at(4100, () => {
@@ -616,6 +843,8 @@ export class CityScene extends Phaser.Scene {
         });
       });
     });
+    // Lights on, planters out.
+    at(4300, () => this.setHubLights(true, true));
     at(5000, finish);
   }
 
@@ -632,6 +861,7 @@ export class CityScene extends Phaser.Scene {
     c.scaffold.setVisible(false);
     c.hub.setVisible(true).setAlpha(1).setCrop();
     c.hubPlaque.setVisible(true).setScale(1 / this.art.plaqueHub.scale);
+    this.setHubLights(true, false);
     k.done = true;
     this.time.delayedCall(150, () => this.deps.store.actions.finishConstruction());
   }
@@ -707,9 +937,16 @@ export class CityScene extends Phaser.Scene {
       } else if (state.phase === "planning") {
         this.director.reset();
         this.crowd.setActive(true);
+        this.kitchenGold.setVisible(false);
+        this.setEaters(2);
+        this.glowTo(this.hatchGlow, 0.22, 500);
       }
     }
-    if (initial && state.phase !== "planning") this.director.reset();
+    if (initial) {
+      if (state.phase !== "planning") this.director.reset();
+      this.setEaters(2);
+      this.scheduleBird();
+    }
 
     // Campus progression.
     if (!initial && prev && prev.phase !== state.phase) {
@@ -724,10 +961,16 @@ export class CityScene extends Phaser.Scene {
     if (state.phase !== "constructing") this.syncCampus(state);
     this.syncFlag(sustainabilityFlagRaised(state.save), initial);
     this.syncBoard(stepsCompleted(state.save.mission.school), initial);
+    // The audit sign steps aside while lunch and its consequences play out.
+    const quietSign = state.phase === "serving" || state.phase === "results" || state.phase === "constructing";
+    this.plaques[1].setVisible(!quietSign);
+    this.board.badge.setVisible(!quietSign);
 
     if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase) {
       const sel = state.introOpen ? null : state.phase === "planning" || state.phase === "building" ? state.selection : null;
       this.showSelection(sel);
+      if (!initial && sel && prev?.selection !== sel) this.selectPulse(sel);
+      if (state.phase === "planning" && !state.introOpen) this.glowTo(this.hatchGlow, sel === "kitchen" ? 0.55 : 0.22, 350);
     }
     const voice = state.save.draft.voice;
     const policy = state.save.draft.policy;
@@ -769,16 +1012,82 @@ export class CityScene extends Phaser.Scene {
     this.ringTween = this.tweens.add({ targets: active, alpha: { from: 1, to: 0.55 }, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
   }
 
+  /** The sign floating over each clickable place. */
+  private plaqueFor(target: Target | Selection): Phaser.GameObjects.Image | null {
+    const c = this.campus;
+    if (target === "kitchen" || target === "noticeboard") return this.plaques[0];
+    if (target === "mission") return this.plaques[1];
+    if (target === "hub") return c.hubPlaque;
+    if (target === "meadow") return c.buildPlaque.visible ? c.buildPlaque : c.hubPlaque.visible ? c.hubPlaque : c.lockPlaque;
+    return null;
+  }
+
+  private ringFor(target: Target | Selection): Phaser.GameObjects.Image | null {
+    if (target === "kitchen" || target === "noticeboard") return this.selRings.kitchen;
+    if (target === "mission") return this.selRings.mission;
+    if (target === "meadow" || target === "hub") return this.selRings.meadow;
+    return null;
+  }
+
+  /** Stops a sign's scale tweens, leaving the "Build here" bob running. */
+  private stopScaleTweens(pl: Phaser.GameObjects.Image) {
+    for (const t of this.tweens.getTweensOf(pl)) if (t !== this.buildPulse) t.remove();
+  }
+
+  /** Raises a sign a little (it grows upward from its pointer). */
+  private liftPlaque(pl: Phaser.GameObjects.Image | null, up: boolean) {
+    if (!pl || !pl.visible) return;
+    const base = (pl.getData("baseScale") as number | undefined) ?? pl.scale;
+    pl.setData("baseScale", base);
+    this.stopScaleTweens(pl);
+    const scale = up ? base * 1.12 : base;
+    if (this.reduced) pl.setScale(scale);
+    else this.tweens.add({ targets: pl, scale, duration: 140, ease: "Quad.easeOut" });
+  }
+
+  /** Warm rim light, a soft ground highlight and a lifted sign. Restrained, never bouncy. */
   private setHover(target: Target | null) {
     if (target === this.hovered) return;
-    const prev = this.hovered ? this.targets.get(this.hovered) : null;
-    prev?.clearTint();
-    if (this.hovered === "meadow" && this.lastState?.selection !== "meadow") this.selRings.meadow.setVisible(false);
+    const prevTarget = this.hovered;
+    if (prevTarget) {
+      this.targets.get(prevTarget)?.clearTint();
+      this.liftPlaque(this.plaqueFor(prevTarget), false);
+      const ring = this.ringFor(prevTarget);
+      const sel = this.lastState?.selection ?? null;
+      if (ring && ring !== this.ringFor(sel)) ring.setVisible(false);
+      if (prevTarget === "kitchen" && sel !== "kitchen" && this.lastState?.phase === "planning") this.glowTo(this.hatchGlow, 0.22, 250);
+    }
     this.hovered = target;
     if (!target) return;
     const img = this.targets.get(target)!;
-    img.setTint(0x261f12).setTintMode(Phaser.TintModes.ADD);
-    if (target === "meadow" && this.lastState?.selection !== "meadow") this.selRings.meadow.setVisible(true).setAlpha(0.6);
+    img.setTint(0x3a2a12).setTintMode(Phaser.TintModes.ADD);
+    this.liftPlaque(this.plaqueFor(target), true);
+    const ring = this.ringFor(target);
+    if (ring && !ring.visible) ring.setVisible(true).setAlpha(0.5);
+    if (target === "kitchen" && this.lastState?.phase === "planning") this.glowTo(this.hatchGlow, 0.5, 200);
+  }
+
+  /** Immediate feedback when a place is chosen: the ring flashes and the sign pops. */
+  private selectPulse(sel: Exclude<Selection, null>) {
+    if (this.reduced) return;
+    const ring = this.ringFor(sel);
+    if (ring) {
+      this.ringTween?.pause();
+      ring.setAlpha(1);
+      this.tweens.add({ targets: ring, alpha: { from: 1, to: 0.35 }, duration: 160, yoyo: true, onComplete: () => this.ringTween?.resume() });
+    }
+    const pl = this.plaqueFor(sel);
+    if (pl && pl.visible) {
+      const base = (pl.getData("baseScale") as number | undefined) ?? pl.scale;
+      pl.setData("baseScale", base);
+      this.stopScaleTweens(pl);
+      pl.setScale(base * 1.2);
+      this.tweens.add({ targets: pl, scale: base, duration: 260, ease: "Back.easeOut" });
+    }
+    if (sel === "kitchen") {
+      this.hatchGlow.setAlpha(0.9);
+      this.glowTo(this.hatchGlow, 0.55, 500);
+    }
   }
 
   // ---------------------------------------------------------------- camera
@@ -790,7 +1099,8 @@ export class CityScene extends Phaser.Scene {
 
   private computeFitZoom() {
     const { w, h } = this.cssSize();
-    const fit = Math.min(w / 820, (h - 40) / 470);
+    // A touch closer than "fit everything": a miniature world you lean over.
+    const fit = Math.min(w / 780, (h - 40) / 450);
     return Math.min(2.6, Math.max(0.6, fit));
   }
 
@@ -848,7 +1158,21 @@ export class CityScene extends Phaser.Scene {
     if (target === "kitchen" || target === "meadow" || target === "mission") {
       const sx = (world.x - cam.worldView.x) * (zc / r);
       const sy = (world.y - cam.worldView.y) * (zc / r);
-      if (sx > freeW * 0.25 && sx < freeW * 0.75 && sy > h * 0.25 && sy < h * 0.78) return;
+      if (sx > freeW * 0.25 && sx < freeW * 0.75 && sy > h * 0.25 && sy < h * 0.78) {
+        // Already in view: just lean a little toward it.
+        if (this.reduced) return;
+        const gx0 = (freeW / 2) * r;
+        const gy0 = h * 0.54 * r;
+        const ix = world.x + (this.scale.width / 2 - gx0) / zc;
+        const iy = world.y + (this.scale.height / 2 - gy0) / zc;
+        const mx = cam.midPoint.x + (ix - cam.midPoint.x) * 0.25;
+        const my = cam.midPoint.y + (iy - cam.midPoint.y) * 0.25;
+        if (Math.hypot(mx - cam.midPoint.x, my - cam.midPoint.y) * zc > 3 * r) {
+          cam.panEffect.reset();
+          cam.pan(mx, my, 380, "Sine.easeOut");
+        }
+        return;
+      }
     }
     const gx = (freeW / 2) * r;
     const gy = h * 0.54 * r;

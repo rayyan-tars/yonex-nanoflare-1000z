@@ -24,6 +24,8 @@ const MIN_PER_SEC = 1.25;
 const WALK = 1.7;
 const INITIAL_QUEUE = 8;
 const QUEUE_LEAD = 7;
+/** Real seconds of anticipation before the first student is served. */
+const OPENING = 0.85;
 
 const SPAWNS: Pt[] = [
   ...HOMES.map(doorTile),
@@ -56,13 +58,19 @@ interface Fig {
   stride: number;
   facing: "front" | "back";
   seatJitter: Pt;
+  /** Walking speed multiplier (students sent away walk slowly). */
+  pace: number;
 }
+
+export type ServiceMoment = "open" | "food-out" | "finale";
 
 export interface ServiceHooks {
   onProgress(processed: number): void;
   onDone(): void;
   makeLabel(text: string, at: Pt & { z: number }, tone: "neutral" | "warn" | "bad"): Phaser.GameObjects.Text;
   isReduced(): boolean;
+  /** Signature moments, for camera and lighting in the scene. */
+  onMoment(moment: ServiceMoment, report: RoundReport): void;
 }
 
 export interface ServiceProps {
@@ -70,6 +78,8 @@ export interface ServiceProps {
   shutter: Phaser.GameObjects.Image;
   scraps: Phaser.GameObjects.Image;
   sparkles: Phaser.GameObjects.Image[];
+  /** Ground highlight over the service yard, for leftover food. */
+  yardRing: Phaser.GameObjects.Image;
 }
 
 const centre = (t: Pt): Pt => ({ x: t.x + 0.5, y: t.y + 0.5 });
@@ -95,6 +105,9 @@ export class ServiceDirector {
   private scrapsLevel = 0;
   private seatCounter = 0;
   private time = 0;
+  private opening = 0;
+  private foodOutShown = false;
+  private missedCount = 0;
   readonly perFigure: number = 1;
 
   constructor(
@@ -175,11 +188,15 @@ export class ServiceDirector {
         stride: 0,
         facing: "front",
         seatJitter: { x: (((k * 37) % 10) / 10 - 0.5) * 0.5, y: (((k * 53) % 10) / 10 - 0.5) * 0.4 },
+        pace: 1,
       });
     }
-    // Students already waiting when the hatch opens.
-    this.figs.slice(0, INITIAL_QUEUE).forEach((f) => this.spawnFig(f, true));
+    // Students already waiting when the hatch opens; they shuffle forward
+    // during a short opening beat before the first meal is served.
+    this.opening = this.hooks.isReduced() ? 0 : OPENING;
+    this.figs.slice(0, INITIAL_QUEUE).forEach((f, i) => this.spawnFig(f, true, i));
     this.hooks.onProgress(0);
+    this.hooks.onMoment("open", report);
     if (n === 0) this.finalize(true);
   }
 
@@ -215,8 +232,12 @@ export class ServiceDirector {
     this.scrapsLevel = 0;
     this.seatCounter = 0;
     this.speed = 1;
-    this.scene.tweens.killTweensOf([this.props.shutter, this.props.scraps]);
-    this.props.shutter.setVisible(false).setAlpha(0);
+    this.opening = 0;
+    this.foodOutShown = false;
+    this.missedCount = 0;
+    this.scene.tweens.killTweensOf([this.props.shutter, this.props.scraps, this.props.yardRing]);
+    this.props.yardRing.setVisible(false);
+    this.props.shutter.setVisible(false).setAlpha(0).setY(this.shutterY());
     this.props.scraps.setVisible(false).setScale(0.3 / this.art.scraps.scale);
     this.props.pans.full.setVisible(true);
     this.props.pans.half.setVisible(false);
@@ -243,13 +264,21 @@ export class ServiceDirector {
     return pts;
   }
 
-  private spawnFig(f: Fig, inQueue: boolean) {
+  private shutterBaseY: number | null = null;
+  private shutterY() {
+    if (this.shutterBaseY === null) this.shutterBaseY = this.props.shutter.y;
+    return this.shutterBaseY;
+  }
+
+  private spawnFig(f: Fig, inQueue: boolean, order = 0) {
     this.queue.push(f);
     const slot = this.slotFor(this.queue.length - 1);
     f.sprite.setVisible(true).setAlpha(0);
-    this.scene.tweens.add({ targets: f.sprite, alpha: 1, duration: 260 });
+    this.scene.tweens.add({ targets: f.sprite, alpha: 1, duration: 260, delay: inQueue ? order * 55 : 0 });
     if (inQueue) {
-      f.px = slot.x;
+      // Start a step back so the opening queue visibly moves up to the hatch.
+      const back = this.opening > 0 ? 0.55 + order * 0.06 : 0;
+      f.px = slot.x - back;
       f.py = slot.y;
       f.state = "queued";
     } else {
@@ -328,7 +357,9 @@ export class ServiceDirector {
     const dt = (Math.min(deltaMs, 50) / 1000) * this.speed;
     this.time += dt;
     this.realTime += dt;
-    this.clock += dt * MIN_PER_SEC;
+    // Opening beat: the hatch lights up and the queue shuffles forward; the clock waits.
+    if (this.opening > 0) this.opening = Math.max(0, this.opening - dt);
+    else this.clock += dt * MIN_PER_SEC;
 
     // Spawn figures on schedule.
     for (const f of this.figs) {
@@ -397,7 +428,7 @@ export class ServiceDirector {
     const dx = to.x - f.px;
     const dy = to.y - f.py;
     const dist = Math.hypot(dx, dy);
-    const move = WALK * dt;
+    const move = WALK * f.pace * dt;
     if (dist <= move || dist < 0.001) {
       f.px = to.x;
       f.py = to.y;
@@ -433,6 +464,12 @@ export class ServiceDirector {
 
     const tl = r.timeline;
     if (tl.windowClosedAt !== null && f.end - 1 >= tl.windowClosedAt) this.closeShutter();
+    // Signature moment: the last portion has gone.
+    if (!this.foodOutShown && tl.foodRanOutAt !== null && f.end > tl.foodRanOutAt) {
+      this.foodOutShown = true;
+      this.closeShutter(true);
+      this.hooks.onMoment("food-out", r);
+    }
 
     const home = centre(f.spawn);
     const goHome = () => {
@@ -477,22 +514,42 @@ export class ServiceDirector {
         };
       };
     } else {
+      // Sent away: an empty-plate bubble, a look around, then a slow walk off.
+      const order = this.missedCount++;
+      const reduced = this.hooks.isReduced();
       f.bubble = this.image(this.art.bubbles[f.outcome === "missed-time" ? "time" : "empty"]);
-      f.bubble.setAlpha(0);
-      this.scene.tweens.add({ targets: f.bubble, alpha: 1, duration: 180 });
+      const bs = f.bubble.scale;
+      f.bubble.setAlpha(0).setScale(reduced ? bs : bs * 0.5);
+      this.scene.tweens.add({ targets: f.bubble, alpha: 1, scale: bs, duration: 220, delay: Math.min(order, 8) * 70, ease: "Back.easeOut" });
       f.state = "after";
       f.facing = "front";
-      f.pause = 0.6;
+      f.pace = 0.7;
+      f.pause = 0.75 + Math.min(order, 10) * 0.14;
+      if (!reduced) {
+        this.scene.time.delayedCall(260 + order * 60, () => f.state !== "done" && f.sprite.setFlipX(!f.sprite.flipX));
+        this.scene.time.delayedCall(560 + order * 60, () => f.state !== "done" && f.sprite.setFlipX(!f.sprite.flipX));
+      }
       f.afterPause = goHome;
     }
     this.place(f, 0);
   }
 
-  private closeShutter() {
+  /** Closes the hatch; when food runs out it comes down firmly. */
+  private closeShutter(firm = false) {
     const sh = this.props.shutter;
     if (sh.visible) return;
-    sh.setVisible(true).setAlpha(0);
-    this.scene.tweens.add({ targets: sh, alpha: 1, duration: this.hooks.isReduced() ? 1 : 350 });
+    const y = this.shutterY();
+    if (this.hooks.isReduced()) {
+      sh.setVisible(true).setAlpha(1).setY(y);
+      return;
+    }
+    if (firm) {
+      sh.setVisible(true).setAlpha(1).setY(y - 12);
+      this.scene.tweens.add({ targets: sh, y, duration: 170, ease: "Quad.easeIn" });
+      return;
+    }
+    sh.setVisible(true).setAlpha(0).setY(y);
+    this.scene.tweens.add({ targets: sh, alpha: 1, duration: 350 });
   }
 
   /** Final, deterministic end state: everything shown matches the report. */
@@ -522,6 +579,30 @@ export class ServiceDirector {
           duration: 260,
           delay: i * 90,
           ease: "Back.easeOut",
+        });
+      }
+    }
+
+    // Signature moment: obvious leftovers. The yard lights up and the pots steam.
+    if (surplus >= 10) {
+      const ring = this.props.yardRing.setVisible(true).setAlpha(reduced ? 0.55 : 0);
+      if (!reduced) {
+        this.scene.tweens.add({ targets: ring, alpha: { from: 0, to: 0.9 }, duration: 420, yoyo: true, repeat: 1, delay: 300, onComplete: () => ring.setAlpha(0.55) });
+        const steamFrom = spots.slice(0, Math.min(pots, 3));
+        steamFrom.forEach((sp, i) => {
+          const p = iso(sp.x, sp.y, 16);
+          const puff = this.image(this.art.puff).setPosition(p.x, p.y).setDepth(p.y + 50).setAlpha(0).setScale(0.25);
+          this.extras.push(puff);
+          this.scene.tweens.add({
+            targets: puff,
+            y: p.y - 22,
+            scale: 0.75,
+            alpha: { from: 0.7, to: 0 },
+            duration: 2200,
+            delay: 500 + i * 650,
+            repeat: -1,
+            ease: "Sine.easeOut",
+          });
         });
       }
     }
@@ -563,6 +644,7 @@ export class ServiceDirector {
         });
       });
     }
+    this.hooks.onMoment("finale", r);
     if (instant) this.scene.time.delayedCall(350, () => this.complete());
   }
 

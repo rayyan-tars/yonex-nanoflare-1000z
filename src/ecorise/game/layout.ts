@@ -112,6 +112,55 @@ export const TREES: readonly { x: number; y: number; kind: "round" | "pine" | "b
   { x: 11, y: 12, kind: "bush" },
 ];
 
+/**
+ * Lived-in details, at fractional grid positions (prop centres). None of
+ * them block walking: they sit on grass, at path edges or beside furniture.
+ */
+export const DETAILS = {
+  menuBoard: { x: 9.62, y: 7.56 },
+  ecoStation: { x: 12.5, y: 9.45 },
+  mopBucket: { x: 10.78, y: 8.2 },
+  backpacks: [
+    { x: 3.28, y: 9.8, look: 0 },
+    { x: 3.72, y: 9.86, look: 1 },
+    { x: 8.72, y: 9.9, look: 2 },
+  ],
+  tableTrays: [
+    { x: 9.38, y: 8.44, full: true },
+    { x: 9.64, y: 8.56, full: false },
+    { x: 10.58, y: 9.48, full: false },
+  ],
+  /** Appear once the Planning Hub is built. */
+  hubPlanters: [
+    { x: 12.35, y: 4.78, v: 0 },
+    { x: 14.55, y: 4.62, v: 1 },
+  ],
+} as const;
+
+/** Seats on the benches of each terrace table (far bench faces the viewer). */
+export const SEATS: readonly { x: number; y: number; facing: "front" | "back" }[] = tableSeats();
+
+function tableSeats() {
+  const out: { x: number; y: number; facing: "front" | "back" }[] = [];
+  for (const t of [
+    { x: 9, y: 8 },
+    { x: 10, y: 9 },
+  ]) {
+    for (const sx of [0.36, 0.64]) {
+      out.push({ x: t.x + sx, y: t.y + 0.24, facing: "front" });
+      out.push({ x: t.x + sx, y: t.y + 0.78, facing: "back" });
+    }
+  }
+  return out;
+}
+
+/** A small, stable offset so scenery isn't stamped exactly on the grid. */
+export function jitter(i: number, amount = 0.16): { x: number; y: number } {
+  const a = Math.sin(i * 12.9898) * 43758.5453;
+  const b = Math.sin(i * 78.233) * 12345.6789;
+  return { x: ((a - Math.floor(a)) - 0.5) * 2 * amount, y: ((b - Math.floor(b)) - 0.5) * 2 * amount };
+}
+
 export const FLOWERBEDS = [
   { x: 4, y: 10 },
   { x: 5, y: 10 },
@@ -203,6 +252,8 @@ export const DESTINATIONS = {
     { x: 8, y: 8 },
   ],
   lookout: [{ x: 12, y: 5 }],
+  /** In front of the Sustainability Board. */
+  board: [{ x: 12, y: 7 }],
 };
 
 /** Breadth-first path between two walkable tiles (4-neighbour). */

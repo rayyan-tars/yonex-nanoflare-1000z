@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { UNITS_PER_PORTION } from "../model/config";
 import type { RoundReport } from "../model/report";
 import { getScenario } from "../model/scenarios";
-import type { ActiveRound } from "../state/store";
+import { prefersReducedMotion, type ActiveRound } from "../state/store";
+import { useCountUp } from "./Campus";
 import { useEco, useEcoEnv } from "./context";
 import { AlertIcon, BulbIcon, CoinIcon, StarIcon } from "./icons";
 import { SidePanel } from "./SidePanel";
@@ -82,7 +83,7 @@ export function ServiceHud({ round, figureSize }: { round: ActiveRound; figureSi
             {served} <small>/ {total}</small>
           </span>
         </div>
-        <div className={`eco-service__cell eco-pot${left === 0 ? " eco-pot--empty" : ""}`}>
+        <div className={`eco-service__cell eco-pot${left === 0 && processed > 0 ? " eco-pot--empty" : ""}`}>
           <div>
             <span className="eco-service__lab">Food left</span>
             <span className="eco-service__val" style={{ display: "block" }}>
@@ -221,6 +222,11 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
   const best = useEco((s) => s.save.progress.ledger.scenarios[report.scenarioId]?.bestCreditedValue ?? 0);
   const campus = useEco((s) => s.save.progress.campus);
   const canImprove = campus.planningHubUnlocked && !campus.planningHubBuilt;
+  const reduced = useEco(prefersReducedMotion);
+  // The result builds up in a quick sequence: stars, headline number, bars, credits.
+  const shownPerMeal = useCountUp(perMeal ?? 0, reduced, 350, 900);
+  const shownCredits = useCountUp(round.credited, reduced, 1100, 700);
+  const mood = report.stars.count === 3 ? " eco-results--great" : report.player.fed ? "" : " eco-results--short";
   const stars = [
     { on: report.stars.fed, label: "Everyone fed" },
     { on: report.stars.lowWaste, label: "Low waste" },
@@ -233,7 +239,7 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
       title={report.stars.count === 3 ? "A lunch to be proud of" : report.player.fed ? "Everyone ate" : "Not everyone ate"}
       onClose={store.actions.tryAgain}
       closeLabel="Close results and plan again"
-      className="eco-results"
+      className={`eco-results${mood}`}
       footer={
         <div className="eco-row eco-row--between">
           <button type="button" className="eco-link" onClick={() => store.actions.openOverlay("about")}>
@@ -284,7 +290,7 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
       )}
 
       <div className={`eco-kpi${report.player.fed ? "" : " eco-kpi--muted"}`}>
-        <span className="eco-kpi__num">{perMeal === null ? "–" : perMeal.toFixed(2)}</span>
+        <span className="eco-kpi__num">{perMeal === null ? "–" : shownPerMeal.toFixed(2)}</span>
         <span>
           <span className="eco-kpi__label">portions wasted per meal served</span>
           <br />
@@ -299,7 +305,7 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
 
       <div className="eco-credits">
         <span className="eco-credits__val">
-          <CoinIcon size={20} /> +{round.credited} Eco Credits
+          <CoinIcon size={20} /> +{Math.round(shownCredits)} Eco Credits
         </span>
         <span className="eco-credits__note">
           {round.creditReason === "improvement"
