@@ -166,6 +166,7 @@ function MissionIntro() {
           <strong>The audit checks whether your real cafeteria has this problem.</strong>
         </span>
       </div>
+      <p className="eco-measure-line">Simulation shows what might happen. Measurement tells us what actually happened.</p>
       <p className="eco-privacy">
         <ShieldIcon size={14} /> Anonymous, whole-cafeteria totals. No names, photos or individual records.
       </p>

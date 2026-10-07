@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BALANCE, REWARDS, SERVING_UNITS, UNITS_PER_PORTION } from "../model/config";
 import { forecastRange } from "../model/planning";
 import { getScenario } from "../model/scenarios";
@@ -9,12 +9,21 @@ import { prefersReducedMotion } from "../state/store";
 import { Dialog } from "./Dialog";
 import { useEco, useEcoEnv } from "./context";
 import { FeedbackIcon, LogoMark, MealIcon, PotIcon } from "./icons";
+import { MessageFrom2050 } from "./Futures";
 
 export function IntroOverlay() {
   const { store } = useEcoEnv();
   const scenarioId = useEco((s) => s.save.scenarioId);
+  const messageSeen = useEco((s) => s.save.story.messageSeen);
+  // The 2050 message plays once (and again after a demo reset), then today.
+  const [stage, setStage] = useState<"message" | "today">(messageSeen ? "today" : "message");
+  const toToday = useCallback(() => {
+    store.actions.markMessageSeen();
+    setStage("today");
+  }, [store]);
   const scenario = getScenario(scenarioId);
   const range = forecastRange(scenario, { rsvp: false, planningOffice: false });
+  if (stage === "message") return <MessageFrom2050 onDone={toToday} />;
   return (
     <motion.div className="eco-intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
       <motion.section
@@ -27,7 +36,7 @@ export function IntroOverlay() {
         exit={{ y: 8, opacity: 0 }}
         transition={{ duration: 0.3, ease: "easeOut" }}
       >
-        <p className="eco-intro__eyebrow">School cafeteria · {scenario.definition.dayLabel} lunch</p>
+        <p className="eco-intro__eyebrow">{scenario.definition.dayLabel} · School cafeteria</p>
         <h1 id="eco-intro-title">
           {range.low}–{range.high} students may come.
         </h1>
@@ -43,9 +52,9 @@ export function IntroOverlay() {
             <span>students miss lunch</span>
           </li>
         </ul>
-        <p className="eco-intro__q">Can you find the balance?</p>
+        <p className="eco-intro__q">Feed everyone. Waste as little as possible.</p>
         <button type="button" className="eco-btn eco-btn--primary eco-btn--lg" onClick={store.actions.enterCity} autoFocus>
-          Plan lunch
+          Start today
         </button>
         <p className="eco-intro__brand">
           <LogoMark size={22} /> EcoRise

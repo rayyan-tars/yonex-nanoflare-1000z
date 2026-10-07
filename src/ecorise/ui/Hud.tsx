@@ -16,6 +16,7 @@ export function TopBar() {
   const serving = useEco((s) => s.phase === "serving");
   const reduced = useEco(prefersReducedMotion);
   const shownCredits = useAnimatedNumber(credits - pending, reduced);
+  const futures = useEco((s) => s.save.story.futuresUnlocked && s.phase !== "constructing");
   return (
     <header className="eco-topbar">
       <div className="eco-bar eco-brand">
@@ -40,6 +41,17 @@ export function TopBar() {
             <span className="sr-only">Eco Credits</span>
           </span>
           <span className="eco-sep" aria-hidden="true" />
+          {futures && (
+            <button
+              type="button"
+              className="eco-future-btn"
+              onClick={() => store.actions.openFutures()}
+              aria-label="Open the two possible futures (2050)"
+              title="Two possible futures"
+            >
+              2050
+            </button>
+          )}
           <button type="button" className="eco-icon-btn" onClick={store.actions.showIntro} aria-label="How to play" title="How to play">
             <HelpIcon size={18} />
           </button>

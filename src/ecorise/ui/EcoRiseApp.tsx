@@ -14,6 +14,7 @@ import { Dock, TopBar } from "./Hud";
 import { BuildCard, BuildPrompt, BuiltCard, ConstructionHud, PlotInfo } from "./Campus";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
 import { MissionPanel } from "./MissionPanel";
+import { FuturesOverlay } from "./Futures";
 import { DemoResetDialog, PlaytestFinishDialog, PlaytestStartDialog, PlaytestSummaryDialog } from "./Playtest";
 import { ResultsPanel, ServiceHud } from "./Round";
 
@@ -140,6 +141,14 @@ function Shell({ fonts }: { fonts: Fonts }) {
     }
   }, [selection, bus, phase]);
 
+  // The first strong lunch leads into Two Futures once the results have played.
+  const futurePending = useEco((s) => s.futureIntroPending);
+  useEffect(() => {
+    if (!futurePending || phase !== "results" || overlay) return;
+    const t = window.setTimeout(() => store.actions.openFutures(true), 2900);
+    return () => window.clearTimeout(t);
+  }, [futurePending, phase, overlay, store]);
+
   // Frame the kitchen, leftovers and bin beside the results card.
   useEffect(() => {
     if (phase !== "results" && phase !== "built") return;
@@ -188,6 +197,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
           {overlay === "playtest-start" && <PlaytestStartDialog key="pt-start" />}
           {overlay === "playtest-finish" && <PlaytestFinishDialog key="pt-finish" />}
           {overlay === "playtest-summary" && <PlaytestSummaryDialog key="pt-summary" />}
+          {overlay === "futures" && <FuturesOverlay key="futures" />}
         </AnimatePresence>
 
         {boot.status === "loading" && <BootSplash />}

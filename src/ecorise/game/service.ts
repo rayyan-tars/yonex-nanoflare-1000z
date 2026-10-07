@@ -216,6 +216,11 @@ export class ServiceDirector {
     this.finalize(true);
   }
 
+  /** Hides or shows the end-of-lunch props (used while drawing the 2050 views). */
+  setExtrasVisible(visible: boolean) {
+    for (const e of this.extras) (e as unknown as Phaser.GameObjects.Components.Visible).setVisible(visible);
+  }
+
   reset() {
     for (const f of this.figs) this.removeFig(f);
     this.figs = [];

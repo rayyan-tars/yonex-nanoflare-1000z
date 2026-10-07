@@ -141,6 +141,10 @@ export class CitizenCrowd {
     }
   }
 
+  get isActive() {
+    return this.active;
+  }
+
   get count() {
     return this.citizens.length;
   }

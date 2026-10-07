@@ -969,6 +969,74 @@ export function tableTraySketch(full: boolean): Sketch {
   return s;
 }
 
+// ------------------------------------------------- 2050 futures (illustrative)
+
+/** Raised community garden bed with vegetables. Centred on local (0, 0). */
+export function gardenBedSketch(variant: number): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 2, 18, 6, { fill: PAL.shadow, alpha: 0.2 });
+  s.box(-0.4, -0.22, 0, 0.8, 0.44, 5, wallShades(PAL.wood), edge(0.4, 0.5));
+  s.face([[-0.36, -0.18, 5], [0.36, -0.18, 5], [0.36, 0.18, 5], [-0.36, 0.18, 5]], 0x5b4330, null);
+  const rng = createRng(400 + variant);
+  for (let row = 0; row < 3; row++) {
+    for (let i = 0; i < 6; i++) {
+      const p = iso(-0.3 + i * 0.12, -0.11 + row * 0.11, 6 + rng() * 2);
+      s.circle(p.x, p.y, 1.5 + rng() * 0.9, { fill: row === 1 ? PAL.leafLight : PAL.leaf, stroke: OUTLINE, strokeAlpha: 0.15, width: 0.3 });
+      if ((variant + row + i) % 4 === 0) s.circle(p.x + 0.6, p.y - 0.8, 0.7, { fill: row === 2 ? 0xe8b04a : PAL.terracotta });
+    }
+  }
+  return s;
+}
+
+/** Three slatted compost bins: food scraps become soil for the garden. */
+export function compostSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 2, 16, 5, { fill: PAL.shadow, alpha: 0.22 });
+  for (let i = 0; i < 3; i++) {
+    const y = -0.42 + i * 0.3;
+    s.box(-0.15, y, 0, 0.3, 0.26, 9, wallShades(i === 1 ? 0x8c6a45 : PAL.wood), edge(0.4, 0.5));
+    for (const z of [3, 6]) s.line([iso(-0.15, y + 0.26, z), iso(0.15, y + 0.26, z)], PAL.woodDark, 0.5, 0.7);
+    s.face([[-0.13, y + 0.02, 9.01], [0.13, y + 0.02, 9.01], [0.13, y + 0.24, 9.01], [-0.13, y + 0.24, 9.01]], i === 0 ? 0x4a3524 : PAL.leaf, null);
+  }
+  return s;
+}
+
+/** Shaded seating under a small solar canopy. Centred on local (0, 0). */
+export function solarCanopySketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 4, 26, 9, { fill: PAL.shadow, alpha: 0.2 });
+  s.box(-0.3, -0.06, 0, 0.6, 0.12, 4, wallShades(PAL.wood), edge(0.4, 0.5));
+  for (const [x, y] of [[-0.42, -0.25], [0.38, -0.25], [-0.42, 0.21], [0.38, 0.21]] as const) s.box(x, y, 0, 0.04, 0.04, 22, wallShades(0x3c4349), edge(0.3, 0.4));
+  s.custom([-40, -50, 40, 0], (ctx) => {
+    const pts = P([[-0.5, -0.32, 26], [0.5, -0.32, 26], [0.5, 0.3, 20], [-0.5, 0.3, 20]]);
+    polyPath(ctx, pts);
+    ctx.fillStyle = linear(ctx, pts[0], pts[2], [[0, "#3d5a78"], [1, "#1f3048"]]);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(190,215,235,0.45)";
+    ctx.lineWidth = 0.4;
+    for (let i = 1; i < 5; i++) {
+      const a = iso(-0.5 + i * 0.2, -0.32, 26);
+      const b = iso(-0.5 + i * 0.2, 0.3, 20);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+  });
+  return s;
+}
+
+/** Full rubbish bags left beside a bin. Centred on local (0, 0). */
+export function bagsSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 1.5, 11, 4, { fill: PAL.shadow, alpha: 0.25 });
+  for (const [x, y, r] of [[-4, 0, 4.2], [3, -1, 4.6], [0, 2, 3.8]] as const) {
+    s.ellipse(x, y - r, r, r * 0.9, { fill: 0x2e3236, stroke: OUTLINE, strokeAlpha: 0.4, width: 0.5 });
+    s.circle(x + 0.4, y - r * 1.85, 0.9, { fill: 0x2e3236 });
+  }
+  return s;
+}
+
 /** Campus Sustainability Flag cloth: a leaf on forest green. */
 export function sustainFlagSketch(): Sketch {
   const s = new Sketch();
@@ -2071,6 +2139,10 @@ export interface ArtCatalog {
   planters: BakedTexture[];
   tableTrays: Record<"full" | "empty", BakedTexture>;
   selYard: BakedTexture;
+  gardenBeds: BakedTexture[];
+  compost: BakedTexture;
+  solarCanopy: BakedTexture;
+  bags: BakedTexture;
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -2151,6 +2223,10 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     planters: [0, 1].map((v) => b(`planter-${v}`, planterSketch(v), 3)),
     tableTrays: { full: b("table-tray-full", tableTraySketch(true), 3), empty: b("table-tray-empty", tableTraySketch(false), 3) },
     selYard: b("sel-yard", selectionSketch(YARD.w, YARD.d)),
+    gardenBeds: [0, 1].map((v) => b(`garden-bed-${v}`, gardenBedSketch(v), 3)),
+    compost: b("compost", compostSketch(), 3),
+    solarCanopy: b("solar-canopy", solarCanopySketch(), 3),
+    bags: b("bags", bagsSketch(), 3),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

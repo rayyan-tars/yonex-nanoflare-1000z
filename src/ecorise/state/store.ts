@@ -97,6 +97,7 @@ export type Overlay =
   | "playtest-start"
   | "playtest-finish"
   | "playtest-summary"
+  | "futures"
   | null;
 export type BootStatus = "loading" | "ready" | "error";
 /**
@@ -137,6 +138,10 @@ export interface EcoState {
   missionView: AuditSource;
   /** Anonymous playtest records, stored apart from the game save. */
   playtest: PlaytestData;
+  /** Session only: the first strong lunch should lead into Two Futures. */
+  futureIntroPending: boolean;
+  /** Session only: the futures view opens with the "Timeline changed" moment. */
+  futuresIntro: boolean;
 }
 
 type Listener = () => void;
@@ -189,6 +194,9 @@ export interface EcoActions {
   clearDemoPlaytests(): void;
   /** Clean filming state: fresh Monday, settings and playtest records kept. */
   resetDemo(): void;
+  /** Story layer. */
+  markMessageSeen(): void;
+  openFutures(withIntro?: boolean): void;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
   setSystemReducedMotion(value: boolean): void;
@@ -236,6 +244,8 @@ export function createEcoStore(options: {
     notice: null,
     missionView: options.initialSave.mission.school || !options.initialSave.mission.demo ? "school" : "demo",
     playtest: options.initialPlaytest ?? emptyPlaytests(),
+    futureIntroPending: false,
+    futuresIntro: false,
   };
   const listeners = new Set<Listener>();
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -290,6 +300,8 @@ export function createEcoStore(options: {
       overlay: null,
       missionView: "school",
       notice: null,
+      futureIntroPending: false,
+      futuresIntro: false,
     };
     listeners.forEach((l) => l());
     persistNow();
@@ -449,11 +461,18 @@ export function createEcoStore(options: {
       finishService: () => {
         if (state.phase !== "serving") return;
         set({ phase: "results" }, false);
+        // A strong lunch (everyone fed, low waste) introduces the two futures, once.
+        const stars = state.round?.report.stars;
+        if (stars?.fed && stars.lowWaste && !state.save.story.futuresUnlocked) {
+          state = { ...state, futureIntroPending: true, save: { ...state.save, story: { ...state.save.story, futuresUnlocked: true } } };
+          listeners.forEach((l) => l());
+          persistNow();
+        }
         updatePlaytest((d) => recordFirstResults(d, now()));
       },
       tryAgain: () => {
         if (state.phase === "serving" || state.phase === "constructing") return;
-        set({ phase: "planning", round: null, selection: "kitchen", overlay: null }, false);
+        set({ phase: "planning", round: null, selection: "kitchen", overlay: null, futureIntroPending: false }, false);
       },
       improveCampus: () => {
         if (state.phase !== "results" && state.phase !== "planning") return;
@@ -569,6 +588,15 @@ export function createEcoStore(options: {
         notify("Demo reset: a clean Monday. Playtest records were kept.");
       },
 
+      markMessageSeen: () => {
+        if (state.save.story.messageSeen) return;
+        updateSave((s) => ({ ...s, story: { ...s.story, messageSeen: true } }));
+      },
+      openFutures: (withIntro = false) => {
+        if (!state.save.story.futuresUnlocked || state.phase === "serving" || state.phase === "constructing") return;
+        set({ overlay: "futures", futuresIntro: withIntro, futureIntroPending: false, selection: null }, false);
+      },
+
       setMotion: (motion: MotionSetting) =>
         updateSave((s) => ({ ...s, settings: { ...s.settings, motion } })),
       setQuality: (quality: QualitySetting) =>
@@ -595,6 +623,8 @@ export function createEcoStore(options: {
             storage: { ...state.storage, loadStatus: "fresh" },
             missionView: "school",
             playtest: emptyPlaytests(),
+            futureIntroPending: false,
+            futuresIntro: false,
           },
           false,
         );

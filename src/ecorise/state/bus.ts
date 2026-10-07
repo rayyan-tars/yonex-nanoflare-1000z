@@ -7,6 +7,9 @@ export interface BusEvents {
   serviceSpeed: { speed: 1 | 2 };
   serviceSkip: undefined;
   constructionSkip: undefined;
+  /** Render the two illustrative 2050 views of the campus. */
+  captureFutures: undefined;
+  futuresCaptured: { bau: string; smart: string } | { error: string };
 }
 
 type Handler<T> = (payload: T) => void;

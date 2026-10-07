@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { Bus } from "../state/bus";
-import { stepsCompleted } from "../model/audit";
+import { auditCompleted, stepsCompleted } from "../model/audit";
 import { prefersReducedMotion, sustainabilityFlagRaised, type EcoState, type EcoStore, type Selection } from "../state/store";
 import { iso, type BakedTexture, type V2 } from "./art/iso";
 import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
@@ -12,6 +12,7 @@ import {
   CRATES,
   DETAILS,
   FEEDBACK_BOX,
+  FUTURE,
   FLAGPOLE,
   FLOWERBEDS,
   GRID,
@@ -111,6 +112,22 @@ export class CityScene extends Phaser.Scene {
   private bird!: Phaser.GameObjects.Image;
   private birdTimer: Phaser.Time.TimerEvent | null = null;
   private zoomTween: Phaser.Tweens.Tween | null = null;
+  private ecoStation!: Phaser.GameObjects.Image;
+  private scrapsImg!: Phaser.GameObjects.Image;
+  private shutterImg!: Phaser.GameObjects.Image;
+  private pansImg!: Record<"full" | "half" | "empty", Phaser.GameObjects.Image>;
+  private yardRing!: Phaser.GameObjects.Image;
+  /** Props that exist only in the illustrative 2050 views (hidden otherwise). */
+  private future!: {
+    beds: Phaser.GameObjects.Image[];
+    gardeners: Phaser.GameObjects.Image[];
+    compost: Phaser.GameObjects.Image;
+    canopy: Phaser.GameObjects.Image;
+    trees: Phaser.GameObjects.Image[];
+    pots: Phaser.GameObjects.Image[];
+    bags: Phaser.GameObjects.Image[];
+  };
+  private capturing = false;
   /** The player's own zoom before lunch, restored afterwards. */
   private preServiceZoom = 1;
   private buildPulse: Phaser.Tweens.Tween | null = null;
@@ -150,6 +167,7 @@ export class CityScene extends Phaser.Scene {
       this.cleanups.push(bus.on("serviceSpeed", (e) => this.director.setSpeed(e.speed)));
       this.cleanups.push(bus.on("serviceSkip", () => this.director.skip()));
       this.cleanups.push(bus.on("constructionSkip", () => this.skipConstruction()));
+      this.cleanups.push(bus.on("captureFutures", () => this.captureFutures()));
       this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
       this.events.once(Phaser.Scenes.Events.DESTROY, () => this.teardown());
       // Debug builds (?debug=1) expose the scene for inspection in devtools.
@@ -277,6 +295,7 @@ export class CityScene extends Phaser.Scene {
       .setScale(0.3 / a.scraps.scale)
       .setDepth(depthAt(TRAY_RETURN.x + 0.5, TRAY_RETURN.y + 0.5) + 0.2)
       .setVisible(false);
+    this.scrapsImg = scraps;
 
     // Real-world mission: the sustainability board, and the flag it can earn.
     const mDepth = depthAt(MISSION_BOARD.x + 0.5, MISSION_BOARD.y + 0.5);
@@ -329,7 +348,7 @@ export class CityScene extends Phaser.Scene {
     // Signs of school life.
     const detail = (tex: BakedTexture, at: { x: number; y: number }, lift = 0) => this.put(tex, at.x, at.y, depthAt(at.x, at.y) + lift);
     detail(a.menuBoard, DETAILS.menuBoard);
-    detail(a.ecoStation, DETAILS.ecoStation);
+    this.ecoStation = detail(a.ecoStation, DETAILS.ecoStation);
     detail(a.mopBucket, DETAILS.mopBucket);
     DETAILS.backpacks.forEach((b) => detail(a.backpacks[b.look], b));
     // Trays sit on the table tops, so they sort just above their table.
@@ -426,7 +445,7 @@ export class CityScene extends Phaser.Scene {
         shutter,
         scraps,
         sparkles: this.sparkles,
-        yardRing: this.put(a.selYard, YARD.x, YARD.y, DEPTH.decal + 1).setTint(0xe8a04a).setVisible(false),
+        yardRing: (this.yardRing = this.put(a.selYard, YARD.x, YARD.y, DEPTH.decal + 1).setTint(0xe8a04a).setVisible(false)),
       },
       {
         onProgress: (processed) => this.deps.bus.emit("serviceProgress", { processed }),
@@ -439,6 +458,169 @@ export class CityScene extends Phaser.Scene {
     );
 
     this.bird = this.add.image(0, 0, a.bird.key, a.bird.frame).setScale(1 / a.bird.scale).setDepth(DEPTH.ui - 40).setVisible(false);
+    this.shutterImg = shutter;
+    this.pansImg = pans;
+
+    // Illustrative 2050 props: built once, hidden, only shown while drawing the futures.
+    const hidden = (tex: BakedTexture, at: { x: number; y: number }) => this.put(tex, at.x, at.y, depthAt(at.x, at.y)).setVisible(false);
+    const mature = (kind: "round" | "pine", at: { x: number; y: number }, k = 1.3) => {
+      const t = a.trees[`${kind}-0`];
+      // Scaled about the trunk, which sits half a tile in from the texture origin.
+      const img = this.put(t, at.x - 0.5, at.y - 0.5, depthAt(at.x, at.y)).setScale(k / t.scale).setVisible(false);
+      return img.setY(img.y - 16 * (k - 1));
+    };
+    this.future = {
+      beds: FUTURE.gardenBeds.map((b) => hidden(a.gardenBeds[b.v], b)),
+      gardeners: FUTURE.gardeners.map((g) => {
+        const tex = a.people[g.look % a.people.length].front[0];
+        const p = iso(g.x, g.y);
+        return this.add
+          .image(p.x, p.y, tex.key, tex.frame)
+          .setOrigin(tex.originX, tex.originY)
+          .setScale(1 / tex.scale)
+          .setFlipX(g.flip)
+          .setDepth(p.y + 0.5)
+          .setVisible(false);
+      }),
+      compost: hidden(a.compost, FUTURE.compost),
+      canopy: hidden(a.solarCanopy, FUTURE.canopy),
+      trees: FUTURE.matureTrees.map((t) => mature(t.kind, t)),
+      pots: FUTURE.leftoverPots.map((p) => hidden(a.leftoverPot, p)),
+      bags: FUTURE.bags.map((b) => hidden(a.bags, b)),
+    };
+  }
+
+  // ------------------------------------------------------------ 2050 futures
+
+  /**
+   * Draws the same campus, from the same camera, as two illustrative 2050
+   * scenarios and hands back both pictures. The live scene is restored
+   * exactly as it was; nothing here touches game state.
+   */
+  private captureFutures() {
+    if (this.capturing) return;
+    this.capturing = true;
+    const cam = this.cameras.main;
+    type G = Phaser.GameObjects.Components.Visible & Phaser.GameObjects.Components.Alpha & Phaser.GameObjects.Components.Transform;
+    const saved = this.children.list.map((o) => {
+      const g = o as unknown as G;
+      return { g, visible: g.visible, alpha: g.alpha, x: g.x, y: g.y, sx: g.scaleX, sy: g.scaleY, angle: g.angle };
+    });
+    const view = { x: cam.midPoint.x, y: cam.midPoint.y, zoom: this.userZoom };
+    const crowdActive = this.crowd.isActive;
+    this.tweens.pauseAll();
+    this.crowd.setActive(false);
+    cam.panEffect.reset();
+    cam.zoomEffect.reset();
+    this.userZoom = 1;
+    this.applyZoom();
+    const focus = iso(9.1, 7.9, 14);
+    cam.centerOn(focus.x, focus.y);
+
+    let finished = false;
+    const restore = () => {
+      for (const s of saved) s.g.setVisible(s.visible).setAlpha(s.alpha).setPosition(s.x, s.y).setScale(s.sx, s.sy).setAngle(s.angle);
+      this.director.setExtrasVisible(true);
+      this.campus.hub.setCrop();
+      this.userZoom = view.zoom;
+      this.applyZoom();
+      cam.centerOn(view.x, view.y);
+      this.tweens.resumeAll();
+      this.crowd.setActive(crowdActive);
+      // Put back the live hover highlight, if the pointer is still over something.
+      if (this.hovered) this.targets.get(this.hovered)?.setTint(0x3a2a12).setTintMode(Phaser.TintModes.ADD);
+      this.capturing = false;
+    };
+    const done = (result: { bau: string; smart: string } | { error: string }) => {
+      if (finished) return;
+      finished = true;
+      restore();
+      this.deps.bus.emit("futuresCaptured", result);
+    };
+    // Never leave the campus in a future state if a snapshot fails.
+    this.time.delayedCall(4000, () => done({ error: "timeout" }));
+    try {
+      const shot = (cb: (src: string) => void) =>
+        this.game.renderer.snapshot((img) => {
+          if (!finished) cb((img as HTMLImageElement).src);
+        });
+      this.applyFuture("bau");
+      shot((bau) => {
+        this.applyFuture("smart");
+        // Phaser clears the request after this callback returns, so ask on the next tick.
+        window.setTimeout(() => shot((smart) => done({ bau, smart })), 0);
+      });
+    } catch (error) {
+      done({ error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  /** Puts the campus into one of the two illustrative 2050 states. */
+  private applyFuture(kind: "bau" | "smart") {
+    const state = this.deps.store.getState();
+    const save = state.save;
+    const smart = kind === "smart";
+    const hubBuilt = save.progress.campus.planningHubBuilt;
+    const audited = auditCompleted(save.mission.school);
+    const c = this.campus;
+    const show = (o: Phaser.GameObjects.Image | Phaser.GameObjects.Text, v: boolean) => o.setVisible(v).setAlpha(1);
+
+    // Only lasting places, no live people or labels.
+    for (const o of this.children.list) if (o instanceof Phaser.GameObjects.Text) o.setVisible(false);
+    // Townsfolk chat bubbles only start fading when the crowd stops, so hide them outright.
+    const chat = this.art.chat;
+    for (const o of this.children.list) if (o instanceof Phaser.GameObjects.Image && o.texture.key === chat.key && (chat.frame === undefined || o.frame.name === chat.frame)) o.setVisible(false);
+    // A still frame: ambient motion rests in a neutral pose so both futures
+    // (and repeat visits) are drawn identically apart from what was built.
+    this.trees.forEach((t) => t.setAngle(0));
+    // No hover or selection highlight from the live campus: plain buildings, signs at rest.
+    this.targets.forEach((t) => t.clearTint());
+    this.plaques[0].setScale(1 / this.art.plaqueCafeteria.scale);
+    this.flagCloth.setScale(1 / this.art.flagCloth.scale);
+    this.sustain.cloth.setScale(1.35 / this.art.sustainFlag.scale);
+    this.positionCook(0.5);
+    this.puffs.forEach((p) => p.setVisible(false));
+    this.shimmers.forEach((sh) => sh.setAlpha(0.35));
+    this.director.setExtrasVisible(false);
+    [...Object.values(this.selRings), this.yardRing, this.kitchenGold, this.bird, c.scaffold, c.lockPlaque, c.buildPlaque, ...c.dust, ...this.sparkles].forEach((o) => o.setVisible(false));
+    this.eaterChat?.setVisible(false);
+    this.plaques.forEach((p, i) => show(p, i === 0));
+    show(this.shutterImg, false);
+    show(this.pansImg.full, true);
+    show(this.pansImg.half, false);
+    show(this.pansImg.empty, false);
+    this.hatchGlow.setAlpha(0.3);
+
+    // Business as usual: the plot never developed, food piles up in the yard.
+    show(c.meadow, !smart);
+    show(c.grounds, smart);
+    show(c.hub.setCrop(), smart);
+    show(c.hubPlaque, smart);
+    c.hubPlaque.setScale(1 / this.art.plaqueHub.scale);
+    this.hubPlanters.forEach((p) => show(p, smart));
+    show(this.hubGlow, smart);
+    this.hubGlow.setAlpha(smart ? 0.5 : 0);
+    this.future.pots.forEach((p) => show(p, !smart));
+    this.future.bags.forEach((b) => show(b, !smart));
+    show(this.scrapsImg.setScale(1.6 / this.art.scraps.scale), !smart);
+    show(this.ecoStation, smart);
+
+    // Food-smart: compost feeds a student garden, shade over seating, mature trees.
+    show(this.future.compost, smart);
+    this.future.beds.forEach((b, i) => show(b, smart && (i < 2 || audited)));
+    this.future.gardeners.forEach((g) => show(g, smart));
+    this.future.trees.forEach((t) => show(t, smart));
+    // The upgraded Planning Hub gets a shaded, solar-roofed meeting spot.
+    show(this.future.canopy, smart && hubBuilt);
+
+    // A lively terrace, and the Sustainability Board as the audit left it.
+    this.eaters.forEach((e, i) => show(e, smart ? true : i < 2));
+    const notes = smart && audited ? 5 : smart ? stepsCompleted(save.mission.school) : 0;
+    this.board.notes.forEach((n, i) => show(n, i < notes));
+    const flag = smart && sustainabilityFlagRaised(save);
+    show(this.sustain.pole, flag);
+    show(this.sustain.cloth, flag);
+    if (flag) this.sustain.cloth.setPosition(this.sustain.top.x + 0.6, this.sustain.top.y);
   }
 
   // --------------------------------------------------------- lunch moments
@@ -1251,6 +1433,7 @@ export class CityScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
+    if (this.capturing) return;
     this.crowd?.update(delta);
     if (this.director.active) this.director.update(delta);
     else this.director.updateAfter(delta);

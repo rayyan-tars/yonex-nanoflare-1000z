@@ -126,30 +126,28 @@ Bug priority for the release candidate: **P0** blocks the demo or submission (fi
 
 ---
 
-## 7. Recommended recording path (~2.5–3 min of gameplay)
+## 7. Recommended recording path (~3 min of gameplay)
 
-Start from **Reset demo** (Settings → For the team). Graphics: Sharp if your FPS table allows.
+Start from **Reset demo** (Settings → For the team): it brings back the Message from 2050 and hides the 2050 view until it is earned again. Graphics: Sharp if your FPS table allows.
 
 | # | Clip | What to do | Length |
 |---|---|---|---|
-| 1 | Campus establishing shot | Intro card visible over the campus; hold, then Plan lunch | 6–8 s |
-| 2 | Problem introduction | Read the intro card line "110–140 students may come" | 5 s |
+| 1 | Message from 2050 | Let the two lines play (or press Continue) | 5–8 s |
+| 2 | Monday problem | Intro card over the campus: "110–140 students may come" → Start today | 6–8 s |
 | 3 | Student Voice | Choose RSVP and Feedback; the Feedback reveal appears | 8–10 s |
 | 4 | Plan portions | Turn on small servings, set 115 portions; show the risk meters | 8–10 s |
 | 5 | Serve Lunch | Press Serve lunch: camera leans in, hatch lights, "Lunch is served" | 4 s |
 | 6 | Students queue | Let the queue and trays play at 1× | 10–12 s |
 | 7 | Visible consequences | Leftover pots, scraps bin and labels at the end of service | 5–6 s |
-| 8 | Results | Stars and headline number building up | 6 s |
-| 9 | Business as usual | Hold on the comparison bars and "portions not wasted" | 5 s |
-| 10 | Eco Credits | Credits counting up; "Planning Hub unlocked" | 4 s |
+| 8 | Results | Stars, headline number, business-as-usual bars, Eco Credits | 8–10 s |
+| 9 | Timeline changed | Plays automatically after a strong lunch | 3–4 s |
+| 10 | Two Futures | Drag the 2050 handle slowly from one side to the other, then Back to today | 8–12 s |
 | 11 | Construction | Improve campus → Build → the full sequence | 7–8 s |
 | 12 | Narrower forecast | Built card (before → now), then the planning forecast with the hub tag | 6–8 s |
-| 13 | Sustainability Board | Hover and click the board in the world | 4 s |
-| 14 | Waste Audit | Try with demo data → step through → the DEMO DATA result | 15–20 s |
+| 13 | Future again (optional) | Top-bar **2050**: the food-smart side now shows the upgraded hub | 4–6 s |
+| 14 | Sustainability Board + Waste Audit | Click the board → Try with demo data → step through → DEMO DATA result | 15–20 s |
 
-Optional B-roll: a separate short take of a **shortage** (90 portions) for the "Food ran out" moment, 8–10 s. Do not show a completed school audit unless your school really did one.
-
----
+Optional B-roll: a separate short take of a **shortage** (90 portions) for the "Food ran out" moment, 8–10 s. Do not show a completed school audit unless your school really did one. The 2050 views are illustrative scenarios, not predictions; keep that wording if you narrate them.
 
 ## 8. Screenshot checklist
 
@@ -160,6 +158,8 @@ Optional B-roll: a separate short take of a **shortage** (90 portions) for the "
 - [ ] Bad-result consequence (food ran out, or leftover pots)
 - [ ] Planning Hub construction (mid-sequence with scaffolding)
 - [ ] Campus after the upgrade (hub, planters, students)
+- [ ] Two Futures with the handle near the middle (both sides visible)
+- [ ] Message from 2050
 - [ ] Waste Audit (DEMO DATA label visible)
 - [ ] Playtest summary — **only after real playtests**, never with test entries
 

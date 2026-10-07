@@ -137,6 +137,39 @@ export const DETAILS = {
   ],
 } as const;
 
+/**
+ * Props that exist only in the illustrative 2050 views. Same map, same
+ * coordinates: the futures differ only in what the school chose to build.
+ */
+export const FUTURE = {
+  gardenBeds: [
+    { x: 4.5, y: 12.5, v: 0 },
+    { x: 5.5, y: 12.45, v: 1 },
+    /** Third bed only when the real Waste Audit was completed. */
+    { x: 5.5, y: 13.45, v: 0 },
+  ],
+  gardeners: [
+    { x: 4.95, y: 12.95, look: 3, flip: false },
+    { x: 4.1, y: 13.05, look: 8, flip: true },
+  ],
+  compost: { x: 11.5, y: 5.7 },
+  canopy: { x: 13.6, y: 4.75 },
+  matureTrees: [
+    { x: 3.5, y: 10.4, kind: "round" as const },
+    { x: 12.55, y: 11.35, kind: "round" as const },
+    { x: 7.45, y: 10.4, kind: "round" as const },
+  ],
+  /** Business as usual: food left in the yard and bags by the tray return. */
+  leftoverPots: [
+    { x: 11.3, y: 4.95 }, { x: 11.72, y: 4.95 }, { x: 11.3, y: 5.4 }, { x: 11.72, y: 5.4 },
+    { x: 11.3, y: 5.85 }, { x: 11.72, y: 5.85 }, { x: 11.3, y: 6.3 }, { x: 11.72, y: 6.3 },
+  ],
+  bags: [
+    { x: 12.3, y: 9.35 },
+    { x: 11.85, y: 9.0 },
+  ],
+} as const;
+
 /** Seats on the benches of each terrace table (far bench faces the viewer). */
 export const SEATS: readonly { x: number; y: number; facing: "front" | "back" }[] = tableSeats();
 

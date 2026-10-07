@@ -37,7 +37,18 @@ export interface SaveData {
    * are never shown as school measurements.
    */
   mission: MissionSave;
+  /** Light story layer: only what is needed to show each moment once. */
+  story: StoryState;
 }
+
+export interface StoryState {
+  /** The "Message from 2050" opening has been seen. */
+  messageSeen: boolean;
+  /** The Two Futures view has been introduced (after a strong lunch). */
+  futuresUnlocked: boolean;
+}
+
+export const DEFAULT_STORY: StoryState = { messageSeen: false, futuresUnlocked: false };
 
 export interface MissionSave {
   school: AuditRecord | null;
@@ -76,6 +87,7 @@ export function defaultSave(): SaveData {
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
     progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null, campus: { ...DEFAULT_CAMPUS } },
     mission: { ...DEFAULT_MISSION },
+    story: { ...DEFAULT_STORY },
   };
 }
 
@@ -122,6 +134,7 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     draft: d.draft,
     progress: d.progress,
     mission: d.mission,
+    story: d.story,
   };
 
   const draft = isRecord(raw.draft) ? raw.draft : {};
@@ -185,6 +198,15 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
       v === undefined || v === null ? null : fix(validAuditRecord(v, source), v as AuditRecord, null);
     out.mission = { school: record(mission.school, "school"), demo: record(mission.demo, "demo") };
     if (!isRecord(raw.mission)) repaired = true;
+  }
+
+  // Added with the story layer: absent is normal.
+  if (raw.story !== undefined) {
+    const st = isRecord(raw.story) ? raw.story : {};
+    out.story = {
+      messageSeen: fix(typeof st.messageSeen === "boolean", st.messageSeen as boolean, false),
+      futuresUnlocked: fix(typeof st.futuresUnlocked === "boolean", st.futuresUnlocked as boolean, false),
+    };
   }
 
   return { data: out, repaired };
