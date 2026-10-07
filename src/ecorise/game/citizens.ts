@@ -361,6 +361,29 @@ export class CitizenCrowd {
     }
   }
 
+  /**
+   * Opening moment: a few students come in through the school gate and walk
+   * to the cafeteria queue. Ambient only; the simulated diners are separate.
+   */
+  arriveFromGate(gate: Tile, count: number) {
+    const goals = DESTINATIONS.queue;
+    this.citizens
+      .filter((c) => !c.follower)
+      .slice(0, count)
+      .forEach((c, i) => {
+        const path = findPath(gate, goals[i % goals.length]);
+        if (!path || path.length < 2) return;
+        this.hideChat(c);
+        c.tile = gate;
+        c.px = gate.x + 0.5 + c.ox;
+        // Spread out along the street behind the gate so they arrive one after another.
+        c.py = gate.y + 0.5 + c.oy + i * 0.55;
+        c.sprite.setVisible(this.active).setAlpha(1);
+        this.beginWalk(c, "queue", path);
+        this.place(c, 0);
+      });
+  }
+
   /** Hides the townsfolk while lunch service figures take the stage. */
   setActive(active: boolean) {
     this.active = active;

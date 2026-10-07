@@ -543,3 +543,70 @@ describe("Cafeteria Waste Audit in the store", () => {
     expect(r2.data.mission).toEqual({ school: null, demo: null });
   });
 });
+
+describe("campus growth toward 2050", () => {
+  function store() {
+    const s = createEcoStore({ initialSave: defaultSave(), loadStatus: "fresh", storage: new MemoryStorage(), systemReducedMotion: false });
+    s.actions.enterCity();
+    return s;
+  }
+  function strongLunch(s: ReturnType<typeof store>) {
+    if (!s.getState().save.draft.voice.rsvp) s.actions.toggleVoice("rsvp");
+    if (!s.getState().save.draft.voice.feedback) s.actions.toggleVoice("feedback");
+    s.actions.setOfferSmall(true);
+    s.actions.setPortions(115);
+    s.actions.serveLunch();
+    s.actions.finishService();
+  }
+
+  it("grows one stage per strong lunch, capped, and never from a weak one", () => {
+    const s = store();
+    s.actions.setPortions(90); // food runs out
+    s.actions.serveLunch();
+    s.actions.finishService();
+    expect(s.getState().round!.report.stars.fed).toBe(false);
+    expect(s.getState().save.story.growth).toBe(0);
+    for (let i = 1; i <= 6; i++) {
+      s.actions.tryAgain();
+      strongLunch(s);
+      expect(s.getState().round!.report.stars.fed && s.getState().round!.report.stars.lowWaste).toBe(true);
+      expect(s.getState().save.story.growth).toBe(Math.min(4, i));
+    }
+    expect(s.getState().save.story.futuresUnlocked).toBe(true);
+  });
+
+  it("growth is cosmetic: replays of a strong lunch still pay no credits", () => {
+    const s = store();
+    strongLunch(s);
+    const credits = s.getState().save.progress.credits;
+    s.actions.tryAgain();
+    strongLunch(s);
+    expect(s.getState().round!.credited).toBe(0);
+    expect(s.getState().save.progress.credits).toBe(credits);
+    expect(s.getState().save.story.growth).toBe(2);
+  });
+});
+
+describe("saves from before campus growth and sound", () => {
+  it("load cleanly with growth 0 and sound on", () => {
+    const st = new MemoryStorage();
+    const old = defaultSave() as unknown as Record<string, unknown>;
+    const settings = { ...(old.settings as Record<string, unknown>) };
+    delete settings.sound;
+    const story = { messageSeen: true, futuresUnlocked: true };
+    st.setItem(SAVE_KEY, JSON.stringify({ ...old, settings, story }));
+    const r = loadSave(st);
+    expect(r.status).toBe("loaded");
+    expect(r.data.story).toEqual({ messageSeen: true, futuresUnlocked: true, growth: 0, auditPrompted: false });
+    expect(r.data.settings.sound).toBe(true);
+  });
+
+  it("repair an impossible growth stage", () => {
+    const st = new MemoryStorage();
+    const bad = defaultSave();
+    st.setItem(SAVE_KEY, JSON.stringify({ ...bad, story: { ...bad.story, growth: 99 } }));
+    const r = loadSave(st);
+    expect(r.status).toBe("repaired");
+    expect(r.data.story.growth).toBe(0);
+  });
+});

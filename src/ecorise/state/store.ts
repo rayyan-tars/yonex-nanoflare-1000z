@@ -49,8 +49,12 @@ import {
   type QualitySetting,
   type SaveData,
   type StorageLike,
+  GROWTH_STAGES,
   writeSave,
 } from "./persistence";
+
+/** What each campus growth stage adds, in order. */
+export const GROWTH_NAMES = ["a student vegetable garden", "a compost station", "new shade trees", "a bigger community garden"] as const;
 
 /** What the Planning Hub costs, in Eco Credits. */
 export const PLANNING_HUB_COST = BUILDING_COSTS.planningOffice;
@@ -151,6 +155,8 @@ export interface EcoActions {
   bootFailed(message: string): void;
   bootRetry(): void;
   enterCity(): void;
+  /** Opens on the campus itself, with nothing selected (the world-first opening). */
+  startDay(): void;
   showIntro(): void;
   select(selection: Selection): void;
   clearSelection(): void;
@@ -196,9 +202,12 @@ export interface EcoActions {
   resetDemo(): void;
   /** Story layer. */
   markMessageSeen(): void;
+  /** The real-world audit prompt was answered (either way). */
+  markAuditPrompted(): void;
   openFutures(withIntro?: boolean): void;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
+  setSound(sound: boolean): void;
   setSystemReducedMotion(value: boolean): void;
   dismissNotice(): void;
   notify(text: string): void;
@@ -341,6 +350,11 @@ export function createEcoStore(options: {
         updateSave((s) => ({ ...s, onboardingDone: true }));
         updatePlaytest(recordOnboarding);
       },
+      startDay: () => {
+        set({ introOpen: false, selection: null }, false);
+        updateSave((s) => ({ ...s, onboardingDone: true, story: { ...s.story, messageSeen: true } }));
+        updatePlaytest(recordOnboarding);
+      },
       showIntro: () => {
         if (state.phase === "serving" || state.phase === "constructing") return;
         set({ introOpen: true, selection: null, overlay: null }, false);
@@ -463,8 +477,16 @@ export function createEcoStore(options: {
         set({ phase: "results" }, false);
         // A strong lunch (everyone fed, low waste) introduces the two futures, once.
         const stars = state.round?.report.stars;
-        if (stars?.fed && stars.lowWaste && !state.save.story.futuresUnlocked) {
-          state = { ...state, futureIntroPending: true, save: { ...state.save, story: { ...state.save.story, futuresUnlocked: true } } };
+        if (stars?.fed && stars.lowWaste) {
+          // Every strong lunch grows the campus one stage toward the food-smart 2050.
+          const story = state.save.story;
+          const growth = Math.min(GROWTH_STAGES, story.growth + 1);
+          const first = !story.futuresUnlocked;
+          state = {
+            ...state,
+            futureIntroPending: first || state.futureIntroPending,
+            save: { ...state.save, story: { ...story, futuresUnlocked: true, growth } },
+          };
           listeners.forEach((l) => l());
           persistNow();
         }
@@ -592,6 +614,10 @@ export function createEcoStore(options: {
         if (state.save.story.messageSeen) return;
         updateSave((s) => ({ ...s, story: { ...s.story, messageSeen: true } }));
       },
+      markAuditPrompted: () => {
+        if (state.save.story.auditPrompted) return;
+        updateSave((s) => ({ ...s, story: { ...s.story, auditPrompted: true } }));
+      },
       openFutures: (withIntro = false) => {
         if (!state.save.story.futuresUnlocked || state.phase === "serving" || state.phase === "constructing") return;
         set({ overlay: "futures", futuresIntro: withIntro, futureIntroPending: false, selection: null }, false);
@@ -599,6 +625,7 @@ export function createEcoStore(options: {
 
       setMotion: (motion: MotionSetting) =>
         updateSave((s) => ({ ...s, settings: { ...s.settings, motion } })),
+      setSound: (sound: boolean) => updateSave((s) => ({ ...s, settings: { ...s.settings, sound } })),
       setQuality: (quality: QualitySetting) =>
         updateSave((s) => ({ ...s, settings: { ...s.settings, quality } })),
       setSystemReducedMotion: (value: boolean) => set({ systemReducedMotion: value }, false),

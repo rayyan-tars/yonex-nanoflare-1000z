@@ -17,7 +17,7 @@ export type QualitySetting = "sharp" | "performance";
 
 export interface SaveData {
   schemaVersion: typeof SAVE_SCHEMA_VERSION;
-  settings: { motion: MotionSetting; quality: QualitySetting };
+  settings: { motion: MotionSetting; quality: QualitySetting; sound: boolean };
   onboardingDone: boolean;
   scenarioId: string;
   draft: { voice: StudentVoice; policy: KitchenPolicy };
@@ -46,9 +46,15 @@ export interface StoryState {
   messageSeen: boolean;
   /** The Two Futures view has been introduced (after a strong lunch). */
   futuresUnlocked: boolean;
+  /** Campus growth toward the food-smart 2050: one stage per strong lunch, up to GROWTH_STAGES. */
+  growth: number;
+  /** The "test it in your school" prompt has been shown (after the first Two Futures). */
+  auditPrompted: boolean;
 }
 
-export const DEFAULT_STORY: StoryState = { messageSeen: false, futuresUnlocked: false };
+export const GROWTH_STAGES = 4;
+
+export const DEFAULT_STORY: StoryState = { messageSeen: false, futuresUnlocked: false, growth: 0, auditPrompted: false };
 
 export interface MissionSave {
   school: AuditRecord | null;
@@ -81,7 +87,7 @@ export const DEFAULT_POLICY: KitchenPolicy = { portionsPrepared: 125, offerSmall
 export function defaultSave(): SaveData {
   return {
     schemaVersion: SAVE_SCHEMA_VERSION,
-    settings: { motion: "system", quality: "sharp" },
+    settings: { motion: "system", quality: "sharp", sound: true },
     onboardingDone: false,
     scenarioId: DEFAULT_SCENARIO_ID,
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
@@ -124,6 +130,8 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     settings: {
       motion: fix(motion === "system" || motion === "reduce" || motion === "full", motion as MotionSetting, d.settings.motion),
       quality: fix(quality === "sharp" || quality === "performance", quality as QualitySetting, d.settings.quality),
+      // Added with sound: absent is normal.
+      sound: settings.sound === undefined ? true : fix(typeof settings.sound === "boolean", settings.sound as boolean, true),
     },
     onboardingDone: fix(typeof raw.onboardingDone === "boolean", raw.onboardingDone as boolean, false),
     scenarioId: fix(
@@ -206,6 +214,12 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     out.story = {
       messageSeen: fix(typeof st.messageSeen === "boolean", st.messageSeen as boolean, false),
       futuresUnlocked: fix(typeof st.futuresUnlocked === "boolean", st.futuresUnlocked as boolean, false),
+      // Added with campus growth: absent is normal.
+      growth:
+        st.growth === undefined
+          ? 0
+          : fix(Number.isInteger(st.growth) && (st.growth as number) >= 0 && (st.growth as number) <= GROWTH_STAGES, st.growth as number, 0),
+      auditPrompted: st.auditPrompted === undefined ? false : fix(typeof st.auditPrompted === "boolean", st.auditPrompted as boolean, false),
     };
   }
 

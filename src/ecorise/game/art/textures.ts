@@ -1026,6 +1026,209 @@ export function solarCanopySketch(): Sketch {
   return s;
 }
 
+/** A leafless tree for the business-as-usual 2050. Same footprint as treeSketch. */
+export function deadTreeSketch(variant: number): Sketch {
+  const s = new Sketch();
+  const base = iso(0.5, 0.5);
+  const rng = createRng(900 + variant * 31);
+  s.ellipse(base.x, base.y + 1, 9, 3, { fill: PAL.shadow, alpha: 0.2 });
+  s.custom([base.x - 22, base.y - 60, base.x + 22, base.y + 2], (ctx) => {
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#5b4a3b";
+    const branch = (x: number, y: number, ang: number, len: number, w: number, depth: number) => {
+      const x2 = x + Math.cos(ang) * len;
+      const y2 = y + Math.sin(ang) * len;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      if (depth <= 0) return;
+      const n = depth > 1 ? 2 : 2 + Math.floor(rng() * 2);
+      for (let i = 0; i < n; i++) {
+        const spread = (i - (n - 1) / 2) * (0.55 + rng() * 0.25);
+        branch(x2, y2, ang + spread + (rng() - 0.5) * 0.2, len * (0.62 + rng() * 0.12), w * 0.62, depth - 1);
+      }
+    };
+    branch(base.x, base.y, -Math.PI / 2 + (variant ? 0.05 : -0.04), 20, 3.2, 3);
+    // A few dry leaves still clinging on.
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = rng() < 0.5 ? "rgba(150,118,72,0.9)" : "rgba(122,96,62,0.9)";
+      ctx.beginPath();
+      ctx.arc(base.x - 12 + rng() * 24, base.y - 50 + rng() * 22, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  return s;
+}
+
+/** An overflowing skip of food waste for the business-as-usual 2050. Centred on local (0, 0). */
+export function dumpsterSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 3, 24, 8, { fill: PAL.shadow, alpha: 0.28 });
+  s.box(-0.32, -0.2, 0, 0.64, 0.4, 13, wallShades(0x3f5a43), edge(0.45, 0.6));
+  for (const x of [-0.16, 0.0, 0.16]) s.line([iso(x, 0.2, 2), iso(x, 0.2, 11)], 0x2c4030, 0.6, 0.7);
+  // Lid propped open, rubbish heaped above the rim.
+  s.face([[-0.32, -0.2, 13], [0.32, -0.2, 13], [0.32, -0.32, 22], [-0.32, -0.32, 22]], 0x2f4634, edge(0.4, 0.5));
+  s.custom([-30, -40, 30, 0], (ctx) => {
+    const heap: [number, number, number, string][] = [
+      [-0.18, -0.02, 4.2, "#2e3236"],
+      [0.12, -0.08, 4.6, "#3a3f44"],
+      [-0.02, 0.06, 3.8, "#2a2e31"],
+      [0.2, 0.08, 3.2, "#6b5a3a"],
+      [-0.24, 0.1, 2.6, "#8a6a3a"],
+    ];
+    for (const [x, y, r, c] of heap) {
+      const p = iso(x, y, 14);
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y - r * 0.4, r, r * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  return s;
+}
+
+/** A small butterfly, wings open. Centred on local (0, 0). */
+export function butterflySketch(variant: number): Sketch {
+  const s = new Sketch();
+  const wing = [0xf2b34b, 0xf0f0e6, 0xe58a6a][variant % 3];
+  s.custom([-6, -5, 6, 5], (ctx) => {
+    ctx.fillStyle = css(wing);
+    for (const dir of [-1, 1]) {
+      ctx.beginPath();
+      ctx.ellipse(dir * 2.4, -1.2, 2.6, 2, dir * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(dir * 1.8, 1.4, 1.7, 1.4, -dir * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = "#3b2f25";
+    ctx.fillRect(-0.4, -2.4, 0.8, 4.6);
+  });
+  return s;
+}
+
+// --------------------------------------------------------------- school
+
+/** The classroom block: two storeys, a run of windows, SCHOOL over the entrance. Footprint 3 × 2 tiles. */
+export function classroomSketch(fonts: ArtFonts): Sketch {
+  const s = new Sketch();
+  const w = 3;
+  const d = 2;
+  const H = 46;
+  const wall = 0xe9dcbf;
+  s.box(-0.05, -0.05, 0, w + 0.1, d + 0.1, 3, wallShades(PAL.stone));
+  s.box(0, 0, 3, w, d, H - 3, wallShades(wall));
+  // A brick base course ties the block to the ground.
+  s.leftRect(d, 0, w, 3, 9, 0xa9573f, edge(0.4));
+  s.rightRect(w, 0, d, 3, 9, shade(0xa9573f, 0.82), edge(0.4));
+  // Windows: a calm grid on both faces, the ground floor lit.
+  for (const [z0, z1, lit] of [[11, 21, true], [28, 38, false]] as const) {
+    for (const xa of [0.18, 0.62, 2.12, 2.56]) leftWindow(s, d, xa, xa + 0.3, z0, z1, lit);
+    if (z0 > 20) for (const xa of [1.15, 1.55]) leftWindow(s, d, xa, xa + 0.3, z0, z1, false);
+    for (const ya of [0.22, 0.72, 1.22]) rightWindow(s, w, ya, ya + 0.32, z0, z1, lit && ya > 1);
+  }
+  // Entrance: double doors under a canopy.
+  s.leftRect(d, 1.12, 1.88, 3, 20, PAL.forest, edge(0.5));
+  s.leftRect(d, 1.17, 1.48, 4, 19, 0x9fc3c6, null);
+  s.leftRect(d, 1.52, 1.83, 4, 19, 0x9fc3c6, null);
+  s.box(1.02, d, 21, 0.96, 0.32, 1.6, wallShades(0x3b4a44), edge(0.4));
+  // SCHOOL sign band above the entrance.
+  s.leftRect(d, 0.62, 2.38, 22.6, 30.2, PAL.forest, edge(0.5));
+  s.leftRect(d, 0.62, 2.38, 22.6, 23.4, PAL.gold, null);
+  s.custom([iso(0.62, d).x - 2, iso(0.62, d, 31).y - 4, iso(2.38, d).x + 2, iso(2.38, d, 22).y + 3], (ctx) => {
+    wallText(ctx, "SCHOOL", iso(1.5, d, 24.6), { size: 6.6, color: css(0xf1d48a), font: fonts.display, weight: 700, tracking: 1.8, align: "center" });
+  });
+  // Roof: parapet and a small clock.
+  s.box(0, 0, H, w, d, 2.5, wallShades(0x6f6a62), edge(0.4));
+  s.face([[0.12, 0.12, H + 2.51], [w - 0.12, 0.12, H + 2.51], [w - 0.12, d - 0.12, H + 2.51], [0.12, d - 0.12, H + 2.51]], 0x8d877c, null);
+  const c = iso(1.5, d, 42);
+  s.circle(c.x, c.y, 3.1, { fill: 0xf6efe0, stroke: PAL.forest, width: 0.8 });
+  s.line([c, { x: c.x, y: c.y - 2 }], 0x1d1a15, 0.6);
+  s.line([c, { x: c.x + 1.5, y: c.y + 0.4 }], 0x1d1a15, 0.6);
+  return s;
+}
+
+/** The school gate at the end of the main street: brick pillars, an open arch and low walls. Centred on local (0, 0). */
+export function schoolGateSketch(): Sketch {
+  const s = new Sketch();
+  const brick = 0xa9573f;
+  s.ellipse(0, 4, 70, 14, { fill: PAL.shadow, alpha: 0.12 });
+  for (const [x0, x1] of [[-2.2, -0.62], [0.62, 2.2]] as const) {
+    s.box(x0, -0.06, 0, x1 - x0, 0.12, 7, wallShades(brick), edge(0.35, 0.5));
+    s.box(x0 - 0.02, -0.08, 7, x1 - x0 + 0.04, 0.16, 1.2, wallShades(PAL.stone), edge(0.3, 0.4));
+  }
+  for (const x of [-0.62, 0.46]) {
+    s.box(x, -0.1, 0, 0.16, 0.2, 24, wallShades(brick), edge(0.4, 0.6));
+    s.box(x - 0.02, -0.12, 24, 0.2, 0.24, 1.6, wallShades(PAL.stone), edge(0.3, 0.4));
+  }
+  s.box(-0.62, -0.05, 20, 1.24, 0.1, 3.4, wallShades(PAL.forest), edge(0.4, 0.5));
+  s.leftRect(0.05, -0.5, 0.5, 20.6, 22.8, PAL.gold, null);
+  return s;
+}
+
+/** An overflowing food-waste bin: the clearest sign of today's problem. Centred on local (0, 0). */
+export function foodWasteBinSketch(full = true): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 3, 17, 6, { fill: PAL.shadow, alpha: 0.28 });
+  s.box(-0.2, -0.16, 0, 0.4, 0.32, 15, wallShades(0x5f6f3e), edge(0.45, 0.6));
+  s.leftRect(0.16, -0.12, 0.12, 6, 9, 0xd9a441, null);
+  if (!full) {
+    // Emptied and closed: the same bin, lid down.
+    s.box(-0.22, -0.18, 15, 0.44, 0.36, 1.6, wallShades(0x4c5a32), edge(0.4, 0.5));
+    return s;
+  }
+  // Lid thrown back; food heaped above the rim.
+  s.face([[-0.2, -0.16, 15], [0.2, -0.16, 15], [0.2, -0.3, 23], [-0.2, -0.3, 23]], 0x4c5a32, edge(0.4, 0.5));
+  s.custom([-24, -34, 24, 0], (ctx) => {
+    const heap: [number, number, number, string][] = [
+      [-0.1, 0.0, 3.6, "#c9893f"],
+      [0.08, -0.05, 3.2, "#e3b25a"],
+      [0.0, 0.08, 3.0, "#a8743a"],
+      [-0.14, 0.1, 2.2, "#d76b45"],
+      [0.14, 0.1, 2.0, "#9bbb5a"],
+      [0.04, -0.12, 1.8, "#f0d27a"],
+    ];
+    for (const [x, y, r, c] of heap) {
+      const p = iso(x, y, 16.5);
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y - r * 0.5, r, r * 0.75, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // A few scraps spilled on the ground.
+    for (const [x, y, c] of [[0.3, 0.25, "#c9893f"], [0.38, 0.05, "#d76b45"], [-0.32, 0.3, "#e3b25a"]] as const) {
+      const p = iso(x, y, 0);
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 1.6, 0.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  return s;
+}
+
+/** An unused raised bed: dry soil, nothing growing yet. Same footprint as gardenBedSketch. */
+export function bareBedSketch(): Sketch {
+  const s = new Sketch();
+  s.box(-0.36, -0.2, 0, 0.72, 0.4, 4.5, wallShades(PAL.wood), edge(0.4, 0.5));
+  s.face([[-0.32, -0.16, 4.51], [0.32, -0.16, 4.51], [0.32, 0.16, 4.51], [-0.32, 0.16, 4.51]], 0xc29a68, null);
+  s.custom([-26, -12, 26, 6], (ctx) => {
+    ctx.strokeStyle = "rgba(120,88,55,0.7)";
+    ctx.lineWidth = 0.6;
+    for (let i = 0; i < 3; i++) {
+      const a = iso(-0.28, -0.1 + i * 0.1, 4.6);
+      const b = iso(0.28, -0.1 + i * 0.1, 4.6);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+  });
+  return s;
+}
+
 /** Full rubbish bags left beside a bin. Centred on local (0, 0). */
 export function bagsSketch(): Sketch {
   const s = new Sketch();
@@ -2143,6 +2346,14 @@ export interface ArtCatalog {
   compost: BakedTexture;
   solarCanopy: BakedTexture;
   bags: BakedTexture;
+  deadTrees: BakedTexture[];
+  dumpster: BakedTexture;
+  butterflies: BakedTexture[];
+  classroom: BakedTexture;
+  schoolGate: BakedTexture;
+  foodWasteBin: BakedTexture;
+  foodWasteBinTidy: BakedTexture;
+  bareBed: BakedTexture;
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -2227,6 +2438,14 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     compost: b("compost", compostSketch(), 3),
     solarCanopy: b("solar-canopy", solarCanopySketch(), 3),
     bags: b("bags", bagsSketch(), 3),
+    deadTrees: [0, 1].map((v) => b(`dead-tree-${v}`, deadTreeSketch(v), 3)),
+    dumpster: b("dumpster", dumpsterSketch(), 3),
+    butterflies: [0, 1, 2].map((v) => b(`butterfly-${v}`, butterflySketch(v), 4)),
+    classroom: b("classroom", classroomSketch(fonts), 2.5),
+    schoolGate: b("school-gate", schoolGateSketch(), 3),
+    foodWasteBin: b("food-waste-bin", foodWasteBinSketch(), 3),
+    foodWasteBinTidy: b("food-waste-bin-tidy", foodWasteBinSketch(false), 3),
+    bareBed: b("bare-bed", bareBedSketch(), 3),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

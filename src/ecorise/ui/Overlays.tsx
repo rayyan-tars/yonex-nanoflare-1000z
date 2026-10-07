@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BALANCE, REWARDS, SERVING_UNITS, UNITS_PER_PORTION } from "../model/config";
 import { forecastRange } from "../model/planning";
 import { getScenario } from "../model/scenarios";
@@ -9,21 +9,21 @@ import { prefersReducedMotion } from "../state/store";
 import { Dialog } from "./Dialog";
 import { useEco, useEcoEnv } from "./context";
 import { FeedbackIcon, LogoMark, MealIcon, PotIcon } from "./icons";
-import { MessageFrom2050 } from "./Futures";
 
 export function IntroOverlay() {
-  const { store } = useEcoEnv();
+  const { store, bus } = useEcoEnv();
   const scenarioId = useEco((s) => s.save.scenarioId);
   const messageSeen = useEco((s) => s.save.story.messageSeen);
-  // The 2050 message plays once (and again after a demo reset), then today.
-  const [stage, setStage] = useState<"message" | "today">(messageSeen ? "today" : "message");
-  const toToday = useCallback(() => {
-    store.actions.markMessageSeen();
-    setStage("today");
-  }, [store]);
+  // A new game opens on the campus itself (world first); the card below is the "How to play" recap.
+  const [worldFirst] = useState(!messageSeen);
+  useEffect(() => {
+    if (!worldFirst) return;
+    store.actions.startDay();
+    bus.emit("establish", undefined);
+  }, [worldFirst, store, bus]);
   const scenario = getScenario(scenarioId);
   const range = forecastRange(scenario, { rsvp: false, planningOffice: false });
-  if (stage === "message") return <MessageFrom2050 onDone={toToday} />;
+  if (worldFirst) return null;
   return (
     <motion.div className="eco-intro" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
       <motion.section

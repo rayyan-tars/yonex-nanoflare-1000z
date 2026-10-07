@@ -2,6 +2,10 @@
 export interface BusEvents {
   focus: { target: "kitchen" | "meadow" | "mission" | "service" | "results"; insetRight: number };
   recenter: undefined;
+  /** The opening shot: ease in on the campus. */
+  establish: undefined;
+  /** The campus now shows this growth stage (after the Ripple, or at once). */
+  growthShown: { level: number; rippled: boolean };
   /** Lunch playback: diners handled so far (in queue order). */
   serviceProgress: { processed: number };
   serviceSpeed: { speed: 1 | 2 };

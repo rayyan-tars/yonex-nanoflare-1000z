@@ -7,16 +7,17 @@ import { getBrowserStorage, loadSave } from "../state/persistence";
 import { loadPlaytests } from "../state/playtest";
 import { createEcoStore, prefersReducedMotion, type Selection } from "../state/store";
 import { BootError, BootSplash } from "./BootScreens";
-import { CouncilPanel } from "./CouncilPanel";
+import { PrepBar } from "./PrepBar";
 import { EcoContext, useEco, useEcoEnv, type EcoEnv } from "./context";
 import { GameCanvas } from "./GameCanvas";
-import { Dock, TopBar } from "./Hud";
+import { Dock, LunchHint, TopBar } from "./Hud";
 import { BuildCard, BuildPrompt, BuiltCard, ConstructionHud, PlotInfo } from "./Campus";
 import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } from "./Overlays";
 import { MissionPanel } from "./MissionPanel";
 import { FuturesOverlay } from "./Futures";
+import { GameSounds } from "./GameSounds";
 import { DemoResetDialog, PlaytestFinishDialog, PlaytestStartDialog, PlaytestSummaryDialog } from "./Playtest";
-import { ResultsPanel, ServiceHud } from "./Round";
+import { AuditInvite, CompactResult, ResultsPanel, ServiceHud, TimelineInvite } from "./Round";
 
 const LOAD_NOTICES: Record<string, string | undefined> = {
   unreadable: "Saved EcoRise data couldn't be read, so a fresh game was started.",
@@ -81,6 +82,9 @@ function Shell({ fonts }: { fonts: Fonts }) {
   const quality = useEco((s) => s.save.settings.quality);
   const reduced = useEco(prefersReducedMotion);
   const [bootKey, setBootKey] = useState(0);
+  const hintVisible = useEco((s) => s.save.progress.last === null && !s.overlay && !s.introOpen);
+  // After lunch the world and a compact result come first; the full breakdown only on request.
+  const [detailsFor, setDetailsFor] = useState<string | number | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -141,13 +145,34 @@ function Shell({ fonts }: { fonts: Fonts }) {
     }
   }, [selection, bus, phase]);
 
-  // The first strong lunch leads into Two Futures once the results have played.
-  const futurePending = useEco((s) => s.futureIntroPending);
+  // After the Ripple the campus gets a moment; then a small invitation into 2050 (the player chooses).
+  const [inviteFor, setInviteFor] = useState<string | null>(null);
   useEffect(() => {
-    if (!futurePending || phase !== "results" || overlay) return;
-    const t = window.setTimeout(() => store.actions.openFutures(true), 2900);
-    return () => window.clearTimeout(t);
-  }, [futurePending, phase, overlay, store]);
+    let t = 0;
+    const off = bus.on("growthShown", ({ rippled }) => {
+      const s = store.getState();
+      const id = s.round?.attemptId;
+      if (!rippled || s.phase !== "results" || !id) return;
+      window.clearTimeout(t);
+      t = window.setTimeout(() => setInviteFor(id), 1500);
+    });
+    return () => {
+      off();
+      window.clearTimeout(t);
+    };
+  }, [bus, store]);
+
+  // Back from 2050 for the first time: the real-world step.
+  const auditPrompted = useEco((s) => s.save.story.auditPrompted);
+  const [ctaOpen, setCtaOpen] = useState(false);
+  const prevOverlay = useRef(overlay);
+  useEffect(() => {
+    const was = prevOverlay.current;
+    prevOverlay.current = overlay;
+    // Set at once (so the Timeline invitation never flashes back); the card itself fades in a moment later.
+    if (was === "futures" && overlay === null && !auditPrompted) setCtaOpen(true);
+  }, [overlay, auditPrompted]);
+  const showCta = ctaOpen && !auditPrompted && !overlay;
 
   // Frame the kitchen, leftovers and bin beside the results card.
   useEffect(() => {
@@ -167,9 +192,20 @@ function Shell({ fonts }: { fonts: Fonts }) {
         <div className="eco-grade" aria-hidden="true" />
 
         {ready && (
-          <div className="eco-hud" inert={introOpen || !!overlay ? true : undefined}>
+          <div className="eco-hud" inert={introOpen || !!overlay || showCta ? true : undefined}>
             <TopBar />
-            {phase === "planning" && <Dock />}
+            {phase === "planning" && selection !== "kitchen" && <Dock />}
+            {/* Separate presence groups: one piece's exit never holds up another's. */}
+            <AnimatePresence>{phase === "planning" && !selection && hintVisible && <LunchHint key="hint" />}</AnimatePresence>
+            <AnimatePresence>{phase === "planning" && selection === "kitchen" && <PrepBar key="prep" />}</AnimatePresence>
+            <AnimatePresence>
+              {phase === "results" && round && inviteFor === round.attemptId && !overlay && !showCta && <TimelineInvite key={`invite-${round.attemptId}`} />}
+            </AnimatePresence>
+            <AnimatePresence>
+              {phase === "results" && round && detailsFor !== round.attemptId && (
+                <CompactResult key={`compact-${round.attemptId}`} round={round} onDetails={() => setDetailsFor(round.attemptId)} />
+              )}
+            </AnimatePresence>
             <AnimatePresence>
               {phase === "serving" && round && <ServiceHud key={round.attemptId} round={round} figureSize={figureSize} />}
               {phase === "building" && selection !== "meadow" && <BuildPrompt key="build-prompt" />}
@@ -177,12 +213,11 @@ function Shell({ fonts }: { fonts: Fonts }) {
             </AnimatePresence>
             <div ref={panelSlotRef} className={`eco-panel-slot${phase === "results" ? " eco-panel-slot--wide" : ""}`}>
               <AnimatePresence mode="wait">
-                {phase === "planning" && selection === "kitchen" && <CouncilPanel key="kitchen" />}
                 {phase === "planning" && selection === "meadow" && <PlotInfo key="meadow" />}
                 {phase === "planning" && selection === "mission" && <MissionPanel key="mission" />}
                 {phase === "building" && selection === "meadow" && <BuildCard key="build" />}
                 {phase === "built" && <BuiltCard key="built" />}
-                {phase === "results" && round && <ResultsPanel key={`results-${round.attemptId}`} round={round} />}
+                {phase === "results" && round && detailsFor === round.attemptId && <ResultsPanel key={`results-${round.attemptId}`} round={round} />}
               </AnimatePresence>
             </div>
           </div>
@@ -198,6 +233,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
           {overlay === "playtest-finish" && <PlaytestFinishDialog key="pt-finish" />}
           {overlay === "playtest-summary" && <PlaytestSummaryDialog key="pt-summary" />}
           {overlay === "futures" && <FuturesOverlay key="futures" />}
+          {showCta && <AuditInvite key="audit-cta" />}
         </AnimatePresence>
 
         {boot.status === "loading" && <BootSplash />}
@@ -211,6 +247,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
           />
         )}
         <Toast />
+        <GameSounds />
       </div>
     </MotionConfig>
   );

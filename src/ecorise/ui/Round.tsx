@@ -375,3 +375,136 @@ export function ResultsPanel({ round }: { round: ActiveRound }) {
     </SidePanel>
   );
 }
+
+/**
+ * The first thing after lunch: stars and one line, low on the screen so the
+ * campus stays in view. The full breakdown is one click away.
+ */
+export function CompactResult({ round, onDetails }: { round: ActiveRound; onDetails: () => void }) {
+  const { store } = useEcoEnv();
+  const report = round.report;
+  const res = report.player.result;
+  const missed = res.missedBecauseFoodRanOut + res.missedBecauseServiceTimeEnded;
+  const campus = useEco((s) => s.save.progress.campus);
+  const canImprove = campus.planningHubUnlocked && !campus.planningHubBuilt;
+  const reduced = useEco(prefersReducedMotion);
+  const wasted = fmt(Math.round(report.player.waste.avoidable * 10) / 10);
+  // One honest line, then (for a weak lunch) one encouraging next step.
+  let parts: string[];
+  let tip: string | null = null;
+  if (!report.player.fed) {
+    parts = [`${missed} ${missed === 1 ? "student" : "students"} missed lunch`];
+    tip = res.missedBecauseFoodRanOut > 0 ? "Plan a safer buffer" : "The counter ran out of time";
+  } else if (!report.stars.lowWaste) {
+    parts = ["Too much prepared", `${wasted} portions wasted`];
+    tip = "Try a tighter plan";
+  } else {
+    parts = ["Everyone fed", `${wasted} wasted`];
+    if (report.prevented > 0) parts.push(`${fmt(report.prevented)} fewer than usual`);
+    else parts.push("no better than usual");
+  }
+  const stars = [report.stars.fed, report.stars.lowWaste, report.stars.beatBaseline];
+  const weak = !report.player.fed || !report.stars.lowWaste;
+  return (
+    <motion.section
+      className={`eco-compact${report.stars.count === 3 ? " is-great" : ""}`}
+      aria-label="Lunch result"
+      initial={reduced ? false : { y: 20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      // The entrance waits for the world pause; leaving is immediate.
+      exit={{ y: 12, opacity: 0, transition: { duration: 0.18, delay: 0 } }}
+      transition={{ duration: 0.35, delay: reduced ? 0 : 0.8, ease: "easeOut" }}
+    >
+      <span className="eco-compact__stars" role="img" aria-label={`${report.stars.count} of 3 stars`}>
+        {stars.map((on, i) => (
+          <StarIcon key={i} size={22} className={on ? "is-on" : undefined} />
+        ))}
+      </span>
+      <p className="eco-compact__line">
+        {parts.join(" · ")}
+        {tip && (
+          <>
+            {" "}
+            <span className="eco-compact__tip">{tip}</span>
+          </>
+        )}
+      </p>
+      <span className="eco-compact__actions">
+        <button type="button" className="eco-link" onClick={onDetails}>
+          Details
+        </button>
+        {/* After a weak lunch, trying again comes first; building is for after a good one. */}
+        <button type="button" className={`eco-btn${canImprove && !weak ? "" : " eco-btn--primary"}`} onClick={store.actions.tryAgain}>
+          {weak ? "Try again" : "Next lunch"}
+        </button>
+        {canImprove && (
+          <button type="button" className={`eco-btn${weak ? "" : " eco-btn--primary eco-btn--gold"}`} onClick={store.actions.improveCampus}>
+            Improve campus
+          </button>
+        )}
+      </span>
+    </motion.section>
+  );
+}
+
+/** After the Ripple: a small invitation the player chooses to follow into 2050. */
+export function TimelineInvite() {
+  const { store } = useEcoEnv();
+  const reduced = useEco(prefersReducedMotion);
+  return (
+    <motion.button
+      type="button"
+      className="eco-invite"
+      onClick={() => store.actions.openFutures(true)}
+      initial={reduced ? false : { y: -10, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.45, ease: "easeOut" }}
+    >
+      <small>Timeline changed</small>
+      <span>
+        See the future you changed <b aria-hidden="true">→</b>
+      </span>
+    </motion.button>
+  );
+}
+
+/** The last step: take what the game showed into a real school lunch. */
+export function AuditInvite() {
+  const { store } = useEcoEnv();
+  const phase = useEco((s) => s.phase);
+  const later = () => store.actions.markAuditPrompted();
+  const measure = () => {
+    store.actions.markAuditPrompted();
+    if (phase === "results") store.actions.tryAgain();
+    store.actions.openMission("school");
+  };
+  return (
+    <motion.section
+      className="eco-cta"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="eco-cta-title"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, transition: { duration: 0.2, delay: 0 } }}
+      transition={{ duration: 0.35, delay: 0.5 }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") later();
+      }}
+    >
+      <div className="eco-cta__card">
+        <p className="eco-cta__eyebrow">You changed the simulation.</p>
+        <h2 id="eco-cta-title">Now test it in your school.</h2>
+        <div className="eco-cta__actions">
+          <button type="button" className="eco-btn eco-btn--primary eco-btn--lg" onClick={measure} autoFocus>
+            Measure a Real Lunch
+          </button>
+          <button type="button" className="eco-link" onClick={later}>
+            Maybe later
+          </button>
+        </div>
+      </div>
+    </motion.section>
+  );
+}

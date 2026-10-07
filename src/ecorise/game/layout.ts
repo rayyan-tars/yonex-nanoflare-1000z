@@ -44,6 +44,38 @@ export const HOMES: readonly HomeSpec[] = [
   { id: "h6", x: 10, y: 10, style: "bungalow", door: "left", wall: 0xeee3cd, roof: 0x4c5a63 },
 ];
 
+/** The classroom block takes the place of two homes beside the main street. */
+export const CLASSROOM: Footprint = { x: 2, y: 5, w: 3, d: 2 };
+/** Homes not drawn: the classroom block and the open ground in front of the terrace replace them. */
+export const REPLACED_HOMES: ReadonlySet<string> = new Set(["h1", "h2", "h5", "h6"]);
+/** The school gate where Street B meets the campus edge; students arrive here. */
+export const SCHOOL_GATE = { x: 6.5, y: 12.95 };
+export const GATE_TILE = { x: 6, y: 12 };
+
+/**
+ * Today's food-waste problem, gathered by the kitchen so the eye finds it:
+ * an overflowing food-waste bin, bags of waste, yesterday's surplus pots and
+ * two bare beds where a garden could be.
+ */
+export const START_PROPS = {
+  wasteBin: { x: 11.62, y: 6.55 },
+  bags: [
+    { x: 11.28, y: 6.05 },
+    { x: 11.82, y: 5.9 },
+    { x: 12.42, y: 7.62 },
+  ],
+  pots: [
+    { x: 11.3, y: 4.95 },
+    { x: 11.72, y: 5.2 },
+  ],
+  /** Where the bag from a wasteful lunch lands, beside the bin. */
+  extraBag: { x: 12.05, y: 6.95 },
+  bareBeds: [
+    { x: 8.5, y: 10.45 },
+    { x: 9.65, y: 10.45 },
+  ],
+} as const;
+
 /** Tile a citizen stands on when "at the door" of each home. */
 export function doorTile(h: HomeSpec): { x: number; y: number } {
   return h.door === "left" ? { x: h.x, y: h.y + 1 } : { x: h.x + 1, y: h.y };
@@ -143,14 +175,21 @@ export const DETAILS = {
  */
 export const FUTURE = {
   gardenBeds: [
-    { x: 4.5, y: 12.5, v: 0 },
-    { x: 5.5, y: 12.45, v: 1 },
+    /** The first two grow where today's bare beds stand. */
+    { x: 8.5, y: 10.45, v: 0 },
+    { x: 9.65, y: 10.45, v: 1 },
     /** Third bed only when the real Waste Audit was completed. */
     { x: 5.5, y: 13.45, v: 0 },
+    /** Beds beside the plaza and by the cafeteria, in view of the opening. */
+    { x: 1.55, y: 9.45, v: 1 },
+    { x: 1.6, y: 10.45, v: 0 },
+    { x: 6.45, y: 2.6, v: 1 },
   ],
   gardeners: [
-    { x: 4.95, y: 12.95, look: 3, flip: false },
-    { x: 4.1, y: 13.05, look: 8, flip: true },
+    { x: 9.1, y: 10.95, look: 3, flip: false },
+    { x: 8.0, y: 10.9, look: 8, flip: true },
+    { x: 2.15, y: 9.95, look: 5, flip: true },
+    { x: 6.95, y: 2.95, look: 6, flip: false },
   ],
   compost: { x: 11.5, y: 5.7 },
   canopy: { x: 13.6, y: 4.75 },
@@ -158,6 +197,9 @@ export const FUTURE = {
     { x: 3.5, y: 10.4, kind: "round" as const },
     { x: 12.55, y: 11.35, kind: "round" as const },
     { x: 7.45, y: 10.4, kind: "round" as const },
+    { x: 1.4, y: 6.3, kind: "round" as const },
+    { x: 6.35, y: 9.55, kind: "round" as const },
+    { x: 13.45, y: 8.95, kind: "pine" as const },
   ],
   /** Business as usual: food left in the yard and bags by the tray return. */
   leftoverPots: [
@@ -167,6 +209,14 @@ export const FUTURE = {
   bags: [
     { x: 12.3, y: 9.35 },
     { x: 11.85, y: 9.0 },
+    { x: 8.55, y: 10.05 },
+    { x: 3.6, y: 10.2 },
+    { x: 6.55, y: 7.55 },
+  ],
+  /** Business as usual: an overflowing skip beside the kitchen yard. */
+  dumpsters: [
+    { x: 12.45, y: 6.4 },
+    { x: 6.7, y: 3.7 },
   ],
 } as const;
 

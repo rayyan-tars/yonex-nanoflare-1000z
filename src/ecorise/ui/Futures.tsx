@@ -167,42 +167,132 @@ export function FuturesOverlay() {
   );
 }
 
-/** Opening: a short message from 2050, then today. */
-export function MessageFrom2050({ onDone }: { onDone: () => void }) {
-  const reduced = useEco(prefersReducedMotion);
+/** Painted 2050 panels, used when present; otherwise the campus is drawn live for both futures. */
+const PAINTED = { bau: "/ecorise/bau-2050.webp", smart: "/ecorise/smart-2050.webp" };
+
+function loads(src: string) {
+  return new Promise<boolean>((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 0);
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+}
+
+/**
+ * The opening: a message from 2050 above two possible futures of this
+ * campus, side by side. One button starts today's lunch.
+ */
+export function OpeningFutures({ onStart }: { onStart: () => void }) {
+  const { bus } = useEcoEnv();
+  const [shots, setShots] = useState<{ bau: string; smart: string; painted: boolean } | null>(null);
+  const titleId = useId();
+
   useEffect(() => {
-    const t = window.setTimeout(onDone, reduced ? 8000 : 7500);
-    return () => window.clearTimeout(t);
-  }, [onDone, reduced]);
+    let live = true;
+    let raf = 0;
+    const off = bus.on("futuresCaptured", (r) => {
+      if (live && !("error" in r)) setShots({ ...r, painted: false });
+    });
+    Promise.all([loads(PAINTED.bau), loads(PAINTED.smart)]).then(([a, b]) => {
+      if (!live) return;
+      if (a && b) setShots({ ...PAINTED, painted: true });
+      else raf = requestAnimationFrame(() => requestAnimationFrame(() => bus.emit("captureFutures", undefined)));
+    });
+    return () => {
+      live = false;
+      off();
+      cancelAnimationFrame(raf);
+    };
+  }, [bus]);
+
   return (
-    <motion.section
-      className="eco-message"
+    <motion.div
+      className="eco-open"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="eco-message-title"
+      aria-labelledby={titleId}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.4 }}
+      transition={{ duration: 0.35 }}
     >
-      <div className="eco-message__strip">
-        <span className="eco-message__year" aria-hidden="true">
-          2050
+      <motion.p className="eco-open__message" initial={{ y: -12, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.5, delay: 0.1 }}>
+        <SproutMark />
+        <span>
+          <small>Message from 2050</small>
+          What your school does today shapes what comes next.
         </span>
-        <p id="eco-message-title" className="eco-message__eyebrow">
-          Message from 2050
-        </p>
-        <p className="eco-message__line">The future of our food system was shaped long before we arrived.</p>
-        <p className="eco-message__line eco-message__line--2">What your school does today changes what comes next.</p>
-        <div className="eco-message__actions">
-          <button type="button" className="eco-btn eco-btn--primary eco-message__next" onClick={onDone} autoFocus>
-            Continue
-          </button>
-          <button type="button" className="eco-message__skip" onClick={onDone}>
-            Skip
-          </button>
+      </motion.p>
+      <motion.section className="eco-open__card" initial={{ y: 18, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}>
+        <header className="eco-open__head">
+          <p className="eco-open__eyebrow">Two futures</p>
+          <h1 id={titleId}>The same campus. Two possible 2050 outcomes.</h1>
+        </header>
+        <div className={`eco-open__panels${shots ? " is-ready" : ""}${shots?.painted ? " is-painted" : ""}`}>
+          <figure className="eco-open__panel eco-open__panel--bau">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {shots && <img src={shots.bau} alt="The campus in 2050 if nothing changes: bare ground, dead trees and food waste piling up." />}
+            <figcaption>
+              <b>Business as usual</b>
+              <span>More waste. Missed opportunities.</span>
+            </figcaption>
+          </figure>
+          <span className="eco-open__divider" aria-hidden="true">
+            <span>‹</span>
+            <span>›</span>
+          </span>
+          <figure className="eco-open__panel eco-open__panel--smart">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {shots && <img src={shots.smart} alt="The campus in 2050 if the school wastes less: gardens, compost, trees and students eating together." />}
+            <figcaption>
+              <b>Food-smart future</b>
+              <span>Less waste. A stronger, healthier school.</span>
+            </figcaption>
+            <i className="eco-open__tag">Illustrative future scenarios</i>
+          </figure>
+          {!shots && <p className="eco-open__status">Drawing 2050…</p>}
         </div>
-      </div>
-    </motion.section>
+        <footer className="eco-open__foot">
+          <ol className="eco-open__steps">
+            <li>
+              <b>1</b>
+              <span>
+                <strong>Play today</strong>
+                Plan the school lunch: feed everyone, waste less.
+              </span>
+            </li>
+            <li>
+              <b>2</b>
+              <span>
+                <strong>Grow your campus</strong>
+                Every strong lunch moves your school toward 2050.
+              </span>
+            </li>
+            <li>
+              <b>3</b>
+              <span>
+                <strong>Measure real impact</strong>
+                Run a waste audit in your own school.
+              </span>
+            </li>
+          </ol>
+          <button type="button" className="eco-open__cta" onClick={onStart} autoFocus>
+            <span aria-hidden="true">▸</span> Play today
+          </button>
+        </footer>
+      </motion.section>
+    </motion.div>
+  );
+}
+
+function SproutMark() {
+  return (
+    <svg className="eco-open__sprout" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+      <path d="M22 40V22" stroke="#b7791f" strokeWidth="3" strokeLinecap="round" />
+      <path d="M22 24C22 14 15 9 6 9c0 10 7 15 16 15Z" fill="#c9a24b" />
+      <path d="M22 21c0-9 6-14 16-14 0 9-6 14-16 14Z" fill="#e2c27a" />
+      <ellipse cx="22" cy="41" rx="9" ry="2.2" fill="#c9a24b" opacity=".35" />
+    </svg>
   );
 }

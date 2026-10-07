@@ -9,6 +9,11 @@ import type { RoundReport } from "../model/report";
 import {
   BARRIER_POSTS,
   BENCH,
+  CLASSROOM,
+  GATE_TILE,
+  REPLACED_HOMES,
+  SCHOOL_GATE,
+  START_PROPS,
   CRATES,
   DETAILS,
   FEEDBACK_BOX,
@@ -66,7 +71,9 @@ const LABEL_TONES = {
   neutral: { bg: "#14241be6", fg: "#f3ecdd" },
   warn: { bg: "#5a3a12ee", fg: "#ffe2a8" },
   bad: { bg: "#5c1f18ee", fg: "#ffd9cf" },
+  good: { bg: "#2f6b3aee", fg: "#f3ecdd" },
 } as const;
+
 
 /** The living town: scenery, students, selection, lunch service and camera. */
 export class CityScene extends Phaser.Scene {
@@ -126,7 +133,29 @@ export class CityScene extends Phaser.Scene {
     trees: Phaser.GameObjects.Image[];
     pots: Phaser.GameObjects.Image[];
     bags: Phaser.GameObjects.Image[];
+    deadTrees: Phaser.GameObjects.Image[];
+    dumpsters: Phaser.GameObjects.Image[];
+    butterflies: Phaser.GameObjects.Image[];
   };
+  /** Live scenery the business-as-usual 2050 withers. */
+  private groundImg!: Phaser.GameObjects.Image;
+  private bushes: Phaser.GameObjects.Image[] = [];
+  private flowerbedImgs: Phaser.GameObjects.Image[] = [];
+  private deadTreeImgs: Phaser.GameObjects.Image[] = [];
+  private startProps!: {
+    wasteBin: Phaser.GameObjects.Image;
+    tidyBin: Phaser.GameObjects.Image;
+    /** Shown after a lunch that prepared too much; cleared by the next Ripple. */
+    extraBag: Phaser.GameObjects.Image;
+    bags: Phaser.GameObjects.Image[];
+    pots: Phaser.GameObjects.Image[];
+    bareBeds: Phaser.GameObjects.Image[];
+  };
+  /** Campus growth stage currently shown on the live campus. */
+  private growthShown = -1;
+  private ripplePending = false;
+  /** Before the first lunch, the cafeteria is the one place that invites a tap. */
+  private hint = false;
   private capturing = false;
   /** The player's own zoom before lunch, restored afterwards. */
   private preServiceZoom = 1;
@@ -164,6 +193,7 @@ export class CityScene extends Phaser.Scene {
       this.cleanups.push(store.subscribe(() => this.applyState(store.getState(), false)));
       this.cleanups.push(bus.on("focus", (e) => this.focusOn(e.target, e.insetRight)));
       this.cleanups.push(bus.on("recenter", () => this.recenter()));
+      this.cleanups.push(bus.on("establish", () => this.establish()));
       this.cleanups.push(bus.on("serviceSpeed", (e) => this.director.setSpeed(e.speed)));
       this.cleanups.push(bus.on("serviceSkip", () => this.director.skip()));
       this.cleanups.push(bus.on("constructionSkip", () => this.skipConstruction()));
@@ -219,7 +249,7 @@ export class CityScene extends Phaser.Scene {
 
   private buildWorld() {
     const a = this.art;
-    this.add.image(0, 0, a.ground.key, a.ground.frame).setOrigin(a.ground.originX, a.ground.originY).setScale(1 / a.ground.scale).setDepth(DEPTH.ground);
+    this.groundImg = this.add.image(0, 0, a.ground.key, a.ground.frame).setOrigin(a.ground.originX, a.ground.originY).setScale(1 / a.ground.scale).setDepth(DEPTH.ground);
 
     // Water glints around the island.
     const water: V2[] = [];
@@ -333,16 +363,35 @@ export class CityScene extends Phaser.Scene {
       .setScale(1 / a.flagCloth.scale)
       .setDepth(depthAt(FLAGPOLE.x + 0.5, FLAGPOLE.y + 0.5) + 0.1);
 
-    for (const h of HOMES) this.put(a.homes[h.id], h.x, h.y, depthAt(h.x + 0.5, h.y + 0.5));
+    for (const h of HOMES) if (!REPLACED_HOMES.has(h.id)) this.put(a.homes[h.id], h.x, h.y, depthAt(h.x + 0.5, h.y + 0.5));
+    // It's a school: a classroom block on the main street and a gate where students arrive.
+    this.put(a.classroom, CLASSROOM.x, CLASSROOM.y, depthAt(CLASSROOM.x + CLASSROOM.w / 2, CLASSROOM.y + CLASSROOM.d / 2));
+    this.put(a.schoolGate, SCHOOL_GATE.x, SCHOOL_GATE.y, depthAt(SCHOOL_GATE.x, SCHOOL_GATE.y));
+    // Today's food-waste problem, gathered by the kitchen. Cleared as the campus grows.
+    const at = (tex: BakedTexture, p: { x: number; y: number }, k = 1) => this.put(tex, p.x, p.y, depthAt(p.x, p.y)).setScale(k / tex.scale);
+    this.startProps = {
+      wasteBin: at(a.foodWasteBin, START_PROPS.wasteBin, 1.25),
+      tidyBin: at(a.foodWasteBinTidy, START_PROPS.wasteBin, 1.25).setVisible(false),
+      extraBag: at(a.bags, START_PROPS.extraBag, 1.45).setVisible(false),
+      bags: START_PROPS.bags.map((b) => at(a.bags, b, 1.45)),
+      pots: START_PROPS.pots.map((p) => at(a.leftoverPot, p, 1.2)),
+      bareBeds: START_PROPS.bareBeds.map((b) => at(a.bareBed, b)),
+    };
     // Scenery is nudged off the grid so the campus looks planted, not stamped.
     TREES.forEach((t, i) => {
       const j = jitter(i + 3, t.kind === "bush" ? 0.2 : 0.16);
       const img = this.put(a.trees[`${t.kind}-${i % 2}`], t.x + j.x, t.y + j.y, depthAt(t.x + 0.5 + j.x, t.y + 0.5 + j.y));
-      if (t.kind !== "bush") this.trees.push(img);
+      if (t.kind === "bush") {
+        this.bushes.push(img);
+        return;
+      }
+      this.trees.push(img);
+      // Its leafless double, shown only in the business-as-usual 2050.
+      this.deadTreeImgs.push(this.put(a.deadTrees[i % 2], t.x + j.x, t.y + j.y, depthAt(t.x + 0.5 + j.x, t.y + 0.5 + j.y)).setVisible(false));
     });
     TABLES.forEach((t) => this.put(a.table, t.x, t.y, depthAt(t.x + 0.5, t.y + 0.5) - 0.3));
     LAMPS.forEach((l) => this.put(a.lamp, l.x, l.y, depthAt(l.x + 0.5, l.y + 0.5)));
-    FLOWERBEDS.forEach((f, i) => this.put(a.flowerbeds[i % a.flowerbeds.length], f.x, f.y, depthAt(f.x + 0.5, f.y + 0.5)));
+    FLOWERBEDS.forEach((f, i) => this.flowerbedImgs.push(this.put(a.flowerbeds[i % a.flowerbeds.length], f.x, f.y, depthAt(f.x + 0.5, f.y + 0.5))));
     this.put(a.crates, CRATES.x, CRATES.y, depthAt(CRATES.x + 0.5, CRATES.y + 0.5));
 
     // Signs of school life.
@@ -487,7 +536,175 @@ export class CityScene extends Phaser.Scene {
       trees: FUTURE.matureTrees.map((t) => mature(t.kind, t)),
       pots: FUTURE.leftoverPots.map((p) => hidden(a.leftoverPot, p)),
       bags: FUTURE.bags.map((b) => hidden(a.bags, b)),
+      deadTrees: this.deadTreeImgs,
+      dumpsters: FUTURE.dumpsters.map((d) => hidden(a.dumpster, d)),
+      // Life coming back: butterflies drift over the gardens once the campus grows.
+      butterflies: [FUTURE.gardenBeds[0], FUTURE.gardenBeds[1], FUTURE.gardenBeds[3], FUTURE.gardenBeds[4], FUTURE.compost].map((at, i) => {
+        const p = iso(at.x, at.y, 22 + (i % 2) * 8);
+        const t = a.butterflies[i % a.butterflies.length];
+        const img = this.add.image(p.x, p.y, t.key, t.frame).setScale(1 / t.scale).setDepth(DEPTH.ui - 50).setVisible(false);
+        img.setData("home", { x: p.x, y: p.y });
+        return img;
+      }),
     };
+  }
+
+  /**
+   * The live campus grows toward the food-smart 2050, one stage per strong
+   * lunch. Stage 1 empties the bin, clears the bags and plants the bare beds;
+   * then the surplus pots go and compost arrives; then shade trees; then a
+   * bigger garden. With `ripple`, the changes play as a short chain spreading
+   * out from the cafeteria; otherwise they simply appear.
+   */
+  private applyGrowth(level: number, ripple: boolean) {
+    const f = this.future;
+    const sp = this.startProps;
+    type Change = { o: Phaser.GameObjects.Image; stage: number; kind: "clear" | "grow" };
+    const changes: Change[] = [
+      { o: sp.wasteBin, stage: 1, kind: "clear" },
+      { o: sp.tidyBin, stage: 1, kind: "grow" },
+      ...sp.bags.map((o) => ({ o, stage: 1, kind: "clear" as const })),
+      { o: sp.extraBag, stage: 0, kind: "clear" },
+      ...sp.bareBeds.map((o) => ({ o, stage: 1, kind: "clear" as const })),
+      ...[f.beds[0], f.beds[1], f.gardeners[0], f.gardeners[1], f.butterflies[0], f.butterflies[1]].map((o) => ({ o, stage: 1, kind: "grow" as const })),
+      ...sp.pots.map((o) => ({ o, stage: 2, kind: "clear" as const })),
+      ...[f.compost, f.butterflies[4]].map((o) => ({ o, stage: 2, kind: "grow" as const })),
+      ...f.trees.slice(0, 3).map((o) => ({ o, stage: 3, kind: "grow" as const })),
+      ...[f.beds[3], f.beds[4], f.beds[5], f.gardeners[2], f.gardeners[3], ...f.trees.slice(3), f.butterflies[2], f.butterflies[3]].map((o) => ({ o, stage: 4, kind: "grow" as const })),
+    ];
+    const prev = Math.max(0, this.growthShown);
+    this.growthShown = level;
+    const animate = ripple && !this.reduced && level > prev;
+    const wanted = (c: Change) => (c.kind === "clear" ? level < c.stage : level >= c.stage);
+    const moving = changes.filter((c) => c.o && c.o.visible !== wanted(c));
+    if (!animate) {
+      changes.forEach((c) => c.o?.setVisible(wanted(c)).setAlpha(1));
+      this.deps.bus.emit("growthShown", { level, rippled: ripple && level > prev });
+      return;
+    }
+    // The chain starts at the cafeteria and spreads outward.
+    const k = iso(KITCHEN.x + KITCHEN.w / 2, KITCHEN.y + KITCHEN.d / 2);
+    moving.sort((a, b) => Math.hypot(a.o.x - k.x, a.o.y - k.y) - Math.hypot(b.o.x - k.x, b.o.y - k.y));
+    this.rippleWave(k.x, k.y);
+    // Lunch's floating labels have done their job; the campus speaks now.
+    this.labels.forEach((l) => this.tweens.add({ targets: l, alpha: 0, duration: 300 }));
+    let t = 250;
+    let last = 0;
+    moving.forEach((c, i) => {
+      const o = c.o;
+      // Items at the same spot (the bin and its tidy twin, a bed and its bare frame) change together.
+      if (i > 0 && Math.hypot(o.x - moving[i - 1].o.x, o.y - moving[i - 1].o.y) > 6) t += 180;
+      const at = t;
+      last = Math.max(last, at);
+      if (c.kind === "clear") {
+        this.tweens.add({
+          targets: o,
+          alpha: 0,
+          y: o.y + 4,
+          duration: 380,
+          delay: at,
+          ease: "Quad.easeIn",
+          onStart: () => this.dustAt(o.x, o.y - 6),
+          onComplete: () => o.setVisible(false).setAlpha(1).setY(o.y - 4),
+        });
+      } else {
+        const y = o.y;
+        const sx = o.scaleX;
+        const sy = o.scaleY;
+        o.setVisible(true).setAlpha(0).setY(y + 6).setScale(sx * 0.6, sy * 0.6);
+        this.tweens.add({ targets: o, alpha: 1, y, scaleX: sx, scaleY: sy, duration: 460, delay: at, ease: "Back.easeOut" });
+      }
+    });
+    this.time.delayedCall(last + 450, () => this.deps.bus.emit("growthShown", { level, rippled: true }));
+  }
+
+  /**
+   * Too much was prepared: the waste ends up by the kitchen. The bin is full
+   * again and one more bag lands beside it, until a strong lunch clears it.
+   */
+  private wastefulLunch() {
+    const sp = this.startProps;
+    const binWasTidy = sp.tidyBin.visible;
+    if (binWasTidy) {
+      sp.tidyBin.setVisible(false);
+      sp.wasteBin.setVisible(true).setAlpha(1);
+      if (!this.reduced) {
+        const sy = sp.wasteBin.scaleY;
+        sp.wasteBin.setScale(sp.wasteBin.scaleX, sy * 0.92);
+        this.tweens.add({ targets: sp.wasteBin, scaleY: sy, duration: 380, delay: 600, ease: "Back.easeOut" });
+      }
+    }
+    const bag = sp.extraBag;
+    if (bag.visible) return;
+    bag.setVisible(true).setAlpha(1);
+    if (this.reduced) return;
+    const y = bag.y;
+    bag.setAlpha(0).setY(y - 26);
+    this.tweens.add({
+      targets: bag,
+      alpha: 1,
+      y,
+      duration: 520,
+      delay: 900,
+      ease: "Bounce.easeOut",
+      onStart: () => this.dustAt(bag.x, y - 4),
+      onComplete: () => this.noticeAt(bag.x, y),
+    });
+  }
+
+  /** A brief warm ring on the ground so new waste is noticed, then gone. */
+  private noticeAt(x: number, y: number) {
+    const g = this.add.graphics().setDepth(DEPTH.ground + 3).setPosition(x, y);
+    g.lineStyle(2, 0xe2a24b, 0.9);
+    g.strokeEllipse(0, 0, 34, 16);
+    g.setScale(0.6);
+    this.tweens.add({ targets: g, scale: 1.6, alpha: 0, duration: 700, repeat: 1, onComplete: () => g.destroy() });
+  }
+
+  /** A soft warm wave rolling out from the cafeteria: the moment things start to change. */
+  private rippleWave(x: number, y: number) {
+    const g = this.add.graphics().setDepth(DEPTH.ground + 2).setPosition(x, y);
+    g.fillStyle(0xfff1b8, 0.32);
+    g.fillEllipse(0, 0, 120, 60);
+    g.setScale(0.2).setAlpha(0.9);
+    this.tweens.add({ targets: g, scale: 4.2, alpha: 0, duration: 1600, ease: "Sine.easeOut", onComplete: () => g.destroy() });
+    this.glowTo(this.hatchGlow, 0.85, 300);
+    this.time.delayedCall(900, () => this.glowTo(this.hatchGlow, 0.4, 900));
+  }
+
+  /** A little puff where something was cleared away. */
+  private dustAt(x: number, y: number) {
+    this.sparkles.slice(0, 4).forEach((s, i) => {
+      const a = -Math.PI / 2 + (i - 1.5) * 0.5;
+      s.setPosition(x, y).setVisible(true).setAlpha(0.9).setScale(0.22);
+      this.tweens.add({
+        targets: s,
+        x: x + Math.cos(a) * 14,
+        y: y + Math.sin(a) * 12,
+        scale: 0.45,
+        alpha: 0,
+        duration: 520,
+        ease: "Cubic.easeOut",
+        onComplete: () => s.setVisible(false),
+      });
+    });
+  }
+
+  private sparkleAt(x: number, y: number) {
+    this.sparkles.forEach((s, i) => {
+      const a = (i / this.sparkles.length) * Math.PI * 2;
+      s.setPosition(x, y).setVisible(true).setAlpha(1).setScale(0.25);
+      this.tweens.add({
+        targets: s,
+        x: x + Math.cos(a) * 34,
+        y: y + Math.sin(a) * 18 - 12,
+        scale: 0.7,
+        alpha: 0,
+        duration: 900,
+        ease: "Cubic.easeOut",
+        onComplete: () => s.setVisible(false),
+      });
+    });
   }
 
   // ------------------------------------------------------------ 2050 futures
@@ -521,6 +738,8 @@ export class CityScene extends Phaser.Scene {
     const restore = () => {
       for (const s of saved) s.g.setVisible(s.visible).setAlpha(s.alpha).setPosition(s.x, s.y).setScale(s.sx, s.sy).setAngle(s.angle);
       this.director.setExtrasVisible(true);
+      this.groundImg.clearTint();
+      this.bushes.forEach((b) => b.clearTint());
       this.campus.hub.setCrop();
       this.userZoom = view.zoom;
       this.applyZoom();
@@ -602,12 +821,25 @@ export class CityScene extends Phaser.Scene {
     this.hubGlow.setAlpha(smart ? 0.5 : 0);
     this.future.pots.forEach((p) => show(p, !smart));
     this.future.bags.forEach((b) => show(b, !smart));
+    this.future.dumpsters.forEach((d) => show(d, !smart));
+    this.future.butterflies.forEach((b) => show(b, smart));
+    const sp = this.startProps;
+    [sp.wasteBin, ...sp.bags, ...sp.pots, ...sp.bareBeds].forEach((o) => show(o, !smart));
+    show(sp.tidyBin, false);
+    show(sp.extraBag, false);
+    // Business as usual withers the campus: dry ground, bare trees, no flowers.
+    if (smart) this.groundImg.clearTint();
+    else this.groundImg.setTint(0xd2bd92);
+    this.trees.forEach((t) => show(t, smart));
+    this.future.deadTrees.forEach((t) => show(t, !smart));
+    this.bushes.forEach((b) => (smart ? b.clearTint() : b.setTint(0xa48c5e)));
+    this.flowerbedImgs.forEach((f) => show(f, smart));
     show(this.scrapsImg.setScale(1.6 / this.art.scraps.scale), !smart);
     show(this.ecoStation, smart);
 
     // Food-smart: compost feeds a student garden, shade over seating, mature trees.
     show(this.future.compost, smart);
-    this.future.beds.forEach((b, i) => show(b, smart && (i < 2 || audited)));
+    this.future.beds.forEach((b, i) => show(b, smart && (i !== 2 || audited)));
     this.future.gardeners.forEach((g) => show(g, smart));
     this.future.trees.forEach((t) => show(t, smart));
     // The upgraded Planning Hub gets a shaded, solar-roofed meeting spot.
@@ -657,6 +889,13 @@ export class CityScene extends Phaser.Scene {
     if (moment === "open") {
       // Lunch has started: the hatch lights up and the camera leans in.
       this.setEaters(0);
+      // The bin and the extra bag show the latest lunch only: a new lunch starts from the campus as it now is.
+      const sp = this.startProps;
+      sp.extraBag.setVisible(false);
+      if (this.growthShown >= 1) {
+        sp.wasteBin.setVisible(false);
+        sp.tidyBin.setVisible(true).setAlpha(1);
+      }
       this.kitchenGold.setVisible(false);
       this.hatchGlow.setAlpha(0.2);
       this.glowTo(this.hatchGlow, 0.95, 450);
@@ -678,6 +917,7 @@ export class CityScene extends Phaser.Scene {
     this.zoomTo(this.preServiceZoom, 700);
     if (!report.timeline.foodRanOutAt) this.glowTo(this.hatchGlow, fed ? 0.35 : 0.15, 600);
     this.setEaters(great ? 7 : fed ? 3 : 0, true);
+    if (fed && !report.stars.lowWaste) this.wastefulLunch();
     if (great) {
       const ring = this.kitchenGold.setVisible(true).setAlpha(0);
       if (this.reduced) ring.setAlpha(0.45);
@@ -1124,6 +1364,22 @@ export class CityScene extends Phaser.Scene {
         this.glowTo(this.hatchGlow, 0.22, 500);
       }
     }
+    // A strong lunch's growth plays as the Ripple shortly after the results land; anything else
+    // (a reload, a demo reset) simply shows the current stage.
+    const growth = state.save.story.growth;
+    if (growth !== this.growthShown && !this.capturing && !this.ripplePending) {
+      if (!initial && state.phase === "results" && growth > this.growthShown) {
+        this.ripplePending = true;
+        this.time.delayedCall(this.reduced ? 500 : 1200, () => {
+          this.ripplePending = false;
+          const now = this.deps.store.getState().save.story.growth;
+          if (now !== this.growthShown) this.applyGrowth(now, now > this.growthShown);
+        });
+      } else {
+        this.applyGrowth(growth, false);
+      }
+    }
+
     if (initial) {
       if (state.phase !== "planning") this.director.reset();
       this.setEaters(2);
@@ -1148,9 +1404,12 @@ export class CityScene extends Phaser.Scene {
     this.plaques[1].setVisible(!quietSign);
     this.board.badge.setVisible(!quietSign);
 
-    if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase) {
+    const hint = state.phase === "planning" && !state.introOpen && !state.selection && !state.overlay && state.save.progress.last === null;
+    if (initial || !prev || prev.selection !== state.selection || prev.introOpen !== state.introOpen || prev.phase !== state.phase || hint !== this.hint) {
+      this.hint = hint;
       const sel = state.introOpen ? null : state.phase === "planning" || state.phase === "building" ? state.selection : null;
       this.showSelection(sel);
+      this.syncLabels();
       if (!initial && sel && prev?.selection !== sel) this.selectPulse(sel);
       if (state.phase === "planning" && !state.introOpen) this.glowTo(this.hatchGlow, sel === "kitchen" ? 0.55 : 0.22, 350);
     }
@@ -1188,10 +1447,39 @@ export class CityScene extends Phaser.Scene {
     rings.mission.setVisible(sel === "mission");
     this.ringTween?.remove();
     this.ringTween = null;
+    if (this.hint && !sel) rings.kitchen.setVisible(true);
     const active = [rings.kitchen, rings.noticeboard, rings.meadow, rings.mission].filter((r) => r.visible);
     active.forEach((r) => r.setAlpha(1));
-    if (!sel || this.reduced) return;
+    if ((!sel && !this.hint) || this.reduced) return;
     this.ringTween = this.tweens.add({ targets: active, alpha: { from: 1, to: 0.55 }, duration: 1400, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
+  }
+
+  /**
+   * World labels stay out of the way: a place's sign shows on hover or
+   * selection (and the cafeteria's as the first-lunch hint). The "Build here"
+   * prompt is always shown when it applies.
+   */
+  private syncLabels() {
+    const st = this.lastState;
+    const sel = st && !st.introOpen ? st.selection : null;
+    const h = this.hovered;
+    const c = this.campus;
+    const want = (pl: Phaser.GameObjects.Image | Phaser.GameObjects.Text, on: boolean) => {
+      const a = on ? 1 : 0;
+      // Compare with where the label is heading, not where a running fade has got to.
+      if (pl.getData("labelTarget") === a) return;
+      pl.setData("labelTarget", a);
+      (pl.getData("labelFade") as Phaser.Tweens.Tween | undefined)?.remove();
+      if (this.reduced) pl.setAlpha(a);
+      else pl.setData("labelFade", this.tweens.add({ targets: pl, alpha: a, duration: on ? 160 : 220 }));
+    };
+    want(this.plaques[0], this.hint || h === "kitchen" || h === "noticeboard" || sel === "kitchen");
+    const mission = h === "mission" || sel === "mission";
+    want(this.plaques[1], mission);
+    want(this.board.badge, mission);
+    const plot = h === "meadow" || h === "hub" || sel === "meadow";
+    want(c.lockPlaque, plot);
+    want(c.hubPlaque, plot);
   }
 
   /** The sign floating over each clickable place. */
@@ -1240,6 +1528,7 @@ export class CityScene extends Phaser.Scene {
       if (prevTarget === "kitchen" && sel !== "kitchen" && this.lastState?.phase === "planning") this.glowTo(this.hatchGlow, 0.22, 250);
     }
     this.hovered = target;
+    this.syncLabels();
     if (!target) return;
     const img = this.targets.get(target)!;
     img.setTint(0x3a2a12).setTintMode(Phaser.TintModes.ADD);
@@ -1284,6 +1573,28 @@ export class CityScene extends Phaser.Scene {
     // A touch closer than "fit everything": a miniature world you lean over.
     const fit = Math.min(w / 780, (h - 40) / 450);
     return Math.min(2.6, Math.max(0.6, fit));
+  }
+
+  /** Opening shot: start a little wider and settle on the campus. */
+  private establish() {
+    this.crowd.arriveFromGate(GATE_TILE, 4);
+    if (this.reduced) return;
+    const cam = this.cameras.main;
+    const z = { v: 0.84 };
+    this.userZoom = z.v;
+    this.applyZoom();
+    cam.centerOn(HOME_VIEW.x, HOME_VIEW.y - 20);
+    this.tweens.add({
+      targets: z,
+      v: 1,
+      duration: 2600,
+      ease: "Sine.easeInOut",
+      onUpdate: () => {
+        this.userZoom = z.v;
+        this.applyZoom();
+        cam.centerOn(HOME_VIEW.x, HOME_VIEW.y - 20 * (1 - (z.v - 0.84) / 0.16));
+      },
+    });
   }
 
   private applyZoom() {
