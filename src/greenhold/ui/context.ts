@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useSyncExternalStore } from "react";
-import type { Store } from "../state/store";
+import type { GameStore } from "../state/store";
 
-export const StoreContext = createContext<Store | null>(null);
+export const StoreContext = createContext<GameStore | null>(null);
 
 /** The game store; the component re-renders whenever the town changes. */
 export function useGame() {

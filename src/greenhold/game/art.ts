@@ -273,47 +273,6 @@ export class Art {
       },
       0x5aa36a,
     );
-    this.groundTile(
-      "g-garden",
-      (ctx) => {
-        for (let k = -2; k <= 2; k++) {
-          const a = P(-0.42, k * 0.18);
-          const b = P(0.42, k * 0.18);
-          ctx.strokeStyle = hex(0x5e3e22);
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(a.x, a.y);
-          ctx.lineTo(b.x, b.y);
-          ctx.stroke();
-          for (let j = 0; j < 5; j++) {
-            const p = P(-0.36 + j * 0.18, k * 0.18);
-            blob(ctx, p.x, p.y - 2, 2.2, j % 2 ? 0x5fae3e : 0x79c04b);
-            if ((j + k) % 3 === 0) blob(ctx, p.x + 1, p.y - 2, 0.9, 0xe0583c, 1.1);
-          }
-        }
-      },
-      0x86603c,
-    );
-    this.groundTile(
-      "g-pond",
-      (ctx) => {
-        ctx.beginPath();
-        ctx.ellipse(0, 0, 24, 11, 0, 0, Math.PI * 2);
-        ctx.fillStyle = hex(0x9a8f7d);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(0, 0.5, 21, 9.5, 0, 0, Math.PI * 2);
-        const g = ctx.createLinearGradient(0, -9, 0, 10);
-        g.addColorStop(0, hex(0x3d9bd0));
-        g.addColorStop(1, hex(0x2c78b0));
-        ctx.fillStyle = g;
-        ctx.fill();
-        blob(ctx, -7, 1, 3, 0x5aa846);
-        blob(ctx, 6, -2, 2.4, 0x5aa846);
-        blob(ctx, 6.5, -2.5, 0.9, 0xf4a6c0, 1.05);
-      },
-      0x8dc85b,
-    );
     // Roads: lane markings follow the connected directions (bit 1 = +x, 2 = −x, 4 = +y, 8 = −y).
     for (let m = 0; m < 16; m++)
       this.groundTile(
@@ -458,27 +417,6 @@ export class Art {
           ctx.globalAlpha = 1;
         },
       },
-      {
-        id: "farmblock",
-        color: 0xa9d8bf,
-        top: 0xc9e8d6,
-        win: false,
-        detail: (ctx) => {
-          for (const z of [6, 18]) {
-            onFaceY(ctx, 0.5, -0.46, 0.46, z - 1, z, hex(0x8a8f92));
-            onFaceX(ctx, 0.5, -0.46, 0.46, z - 1, z, hex(0x6f7477));
-            for (let u = -0.4; u < 0.42; u += 0.12) {
-              const a = P(u, 0.5, z + 2.5);
-              blob(ctx, a.x, a.y, 2.3, 0x4fa14a);
-              const b = P(0.5, u, z + 2.5);
-              blob(ctx, b.x, b.y, 2.3, 0x3f8a3c);
-            }
-          }
-          ctx.globalAlpha = 0.25;
-          onFaceY(ctx, 0.5, -0.5, 0.5, 0, BH, "#e9fff2");
-          ctx.globalAlpha = 1;
-        },
-      },
     ];
     for (const m of mats) {
       this.obj(`b-${m.id}`, BH + TH / 2, (ctx) => {
@@ -493,8 +431,8 @@ export class Art {
         if (m.win !== false) windows(ctx, hex(0xffd27a));
         else {
           ctx.globalAlpha = 0.55;
-          onFaceY(ctx, 0.5, -0.46, 0.46, 2, BH - 2, hex(m.id === "farmblock" ? 0xd9a0ff : 0xffd27a));
-          onFaceX(ctx, 0.5, -0.46, 0.46, 2, BH - 2, hex(m.id === "farmblock" ? 0xc080f0 : 0xf0c060));
+          onFaceY(ctx, 0.5, -0.46, 0.46, 2, BH - 2, hex(0xffd27a));
+          onFaceX(ctx, 0.5, -0.46, 0.46, 2, BH - 2, hex(0xf0c060));
         }
       });
       this.vh.set(m.id, 1);
@@ -679,139 +617,6 @@ export class Art {
     });
     this.vh.set("wind", 4);
 
-    this.obj("m-battery", 34, (ctx) => {
-      prism(ctx, { x0: -0.36, x1: 0.36, y0: -0.26, y1: 0.3, z0: 0, z1: 22 }, 0xe8ecee);
-      onFaceY(ctx, 0.3, -0.36, 0.36, 3, 6, hex(0x3fae6a));
-      onFaceX(ctx, 0.36, -0.26, 0.3, 3, 6, hex(0x2f8a52));
-      const c = P(0.36, 0.02, 14);
-      ctx.beginPath();
-      ctx.moveTo(c.x + 1, c.y - 7);
-      ctx.lineTo(c.x - 2, c.y + 1);
-      ctx.lineTo(c.x + 1, c.y + 1);
-      ctx.lineTo(c.x - 1, c.y + 7);
-      ctx.lineTo(c.x + 3, c.y - 1);
-      ctx.lineTo(c.x, c.y - 1);
-      ctx.closePath();
-      ctx.fillStyle = hex(0xf2c230);
-      ctx.fill();
-    });
-    this.vh.set("battery", 0.8);
-
-    this.obj("m-well", 60, (ctx) => {
-      prism(ctx, { x0: -0.35, x1: 0.1, y0: 0, y1: 0.4, z0: 0, z1: 14 }, 0xd8cdb5, { top: 0x8a6f52 });
-      const t = P(0.22, -0.2, 0);
-      for (const dx of [-7, 7]) {
-        ctx.strokeStyle = hex(0x6b6f73);
-        ctx.lineWidth = 1.4;
-        ctx.beginPath();
-        ctx.moveTo(t.x + dx, t.y);
-        ctx.lineTo(t.x + dx * 0.6, t.y - 34);
-        ctx.stroke();
-      }
-      cylinder(ctx, t.x, t.y, 10, 34, 50, 0x4b97c9, 0x6fb3dd);
-      ctx.beginPath();
-      ctx.moveTo(t.x - 10, t.y - 50 - 0.5);
-      ctx.lineTo(t.x, t.y - 58);
-      ctx.lineTo(t.x + 10, t.y - 50 - 0.5);
-      ctx.fillStyle = hex(0x3a76a0);
-      ctx.fill();
-    });
-    this.vh.set("well", 2);
-
-    this.obj("m-raintank", 40, (ctx) => {
-      cylinder(ctx, 2, 2, 12, 0, 26, 0x5f9ea0, 0x4d8a8c);
-      ctx.strokeStyle = "rgba(255,255,255,0.35)";
-      ctx.lineWidth = 0.8;
-      for (const z of [8, 16]) {
-        ctx.beginPath();
-        ctx.ellipse(2, 2 - z, 12, 6, 0, 0, Math.PI);
-        ctx.stroke();
-      }
-      ctx.fillStyle = hex(0x9fd3e6);
-      ctx.fillRect(-1, -24.5, 6, 1.5);
-    });
-    this.vh.set("raintank", 0.9);
-
-    this.obj("m-landfill", 26, (ctx) => {
-      ctx.beginPath();
-      ctx.ellipse(0, 3, 28, 12, 0, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(60,45,25,0.25)";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(-27, 2);
-      ctx.quadraticCurveTo(-22, -17, 0, -19);
-      ctx.quadraticCurveTo(22, -17, 27, 2);
-      ctx.ellipse(0, 2, 27, 10, 0, 0, Math.PI);
-      ctx.closePath();
-      const lg = ctx.createLinearGradient(-20, -18, 20, 6);
-      lg.addColorStop(0, hex(0xa48c66));
-      lg.addColorStop(1, hex(0x6f5c40));
-      ctx.fillStyle = lg;
-      ctx.fill();
-      ctx.strokeStyle = EDGE;
-      ctx.lineWidth = 0.6;
-      ctx.stroke();
-      const r = rand(11);
-      const cols = [0xd94f3d, 0x3f7fd6, 0xf2c230, 0xffffff, 0x4cae4c, 0x7d6e8e];
-      for (let i = 0; i < 26; i++) {
-        const x = (r() - 0.5) * 42;
-        const y = -r() * 14 + 1;
-        if (Math.abs(x) > 24 - Math.abs(y)) continue;
-        ctx.fillStyle = hex(cols[i % cols.length]);
-        ctx.fillRect(x, y, 2 + r() * 2.5, 1.4 + r() * 1.5);
-      }
-      ctx.strokeStyle = "rgba(120,110,90,0.8)";
-      ctx.lineWidth = 0.6;
-      for (let k = -1; k <= 1; k += 2) {
-        ctx.beginPath();
-        ctx.moveTo(k * 30, 2);
-        ctx.lineTo(k * 30, -4);
-        ctx.stroke();
-      }
-    });
-    this.smoke.set("landfill", [P(0, 0, 18)]);
-    this.vh.set("landfill", 0.6);
-
-    this.obj("m-compost", 24, (ctx) => {
-      for (const [gx, gy] of [
-        [-0.22, 0.05],
-        [0.08, 0.2],
-        [0.12, -0.18],
-      ]) {
-        const b: Box = { x0: gx - 0.14, x1: gx + 0.14, y0: gy - 0.14, y1: gy + 0.14, z0: 0, z1: 11 };
-        prism(ctx, b, 0x9a6b3f, { top: 0x4e3523 });
-        const p = P(gx, gy, 12);
-        blob(ctx, p.x - 2, p.y, 2, 0x6fb04a);
-        blob(ctx, p.x + 2, p.y + 1, 1.6, 0x8fc25a);
-      }
-    });
-    this.vh.set("compost", 0.5);
-
-    this.obj("m-recycling", 46, (ctx) => {
-      prism(ctx, { x0: -0.45, x1: 0.42, y0: -0.4, y1: 0.3, z0: 0, z1: 24 }, 0x3f9c8f, { top: 0x2e7a70 });
-      // Saw-tooth roof.
-      for (const gx of [-0.3, 0, 0.3]) poly(ctx, [P(gx - 0.14, -0.4, 24), P(gx + 0.14, -0.4, 24), P(gx + 0.14, 0.3, 24), P(gx - 0.14, 0.3, 32)], hex(0xd8dedf), EDGE);
-      onFaceX(ctx, 0.42, -0.25, 0.15, 0, 15, hex(0x2a5a55));
-      // Recycling arrows.
-      const c = P(-0.05, 0.3, 13);
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 4.5, 0.3, Math.PI * 1.7);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(c.x + 4, c.y - 3.5);
-      ctx.lineTo(c.x + 5.8, c.y - 1);
-      ctx.lineTo(c.x + 2.8, c.y - 0.6);
-      ctx.fillStyle = "#fff";
-      ctx.fill();
-      [0x3f7fd6, 0xf2c230, 0x4cae4c].forEach((col, k) => {
-        const b = -0.42 + k * 0.17;
-        prism(ctx, { x0: b, x1: b + 0.13, y0: 0.34, y1: 0.47, z0: 0, z1: 8 }, col);
-      });
-    });
-    this.vh.set("recycling", 1.1);
-
     this.obj("m-bus", 40, (ctx) => {
       prism(ctx, { x0: -0.3, x1: 0.3, y0: -0.12, y1: -0.08, z0: 0, z1: 20 }, 0xa9cfe0);
       for (const gx of [-0.3, 0.28]) prism(ctx, { x0: gx, x1: gx + 0.02, y0: -0.12, y1: 0.12, z0: 0, z1: 20 }, 0x666);
@@ -829,32 +634,6 @@ export class Art {
       ctx.fillText("B", s.x, s.y - 27);
     });
     this.vh.set("bus", 0.9);
-
-    this.obj("m-tram", 40, (ctx) => {
-      prism(ctx, { x0: -0.5, x1: 0.5, y0: -0.3, y1: 0.05, z0: 0, z1: 4 }, 0xc7c2b6);
-      for (const gy of [0.18, 0.36]) {
-        ctx.strokeStyle = hex(0x77736b);
-        ctx.lineWidth = 1.2;
-        const a = P(-0.5, gy);
-        const b = P(0.5, gy);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-      }
-      for (const gx of [-0.35, 0.35]) prism(ctx, { x0: gx, x1: gx + 0.03, y0: -0.2, y1: -0.17, z0: 4, z1: 24 }, 0x555);
-      prism(ctx, { x0: -0.45, x1: 0.45, y0: -0.3, y1: 0.02, z0: 24, z1: 26 }, 0x3fae6a);
-      // The overhead wire.
-      ctx.strokeStyle = "rgba(40,40,40,0.6)";
-      ctx.lineWidth = 0.5;
-      const w1 = P(-0.5, 0.27, 30);
-      const w2 = P(0.5, 0.27, 30);
-      ctx.beginPath();
-      ctx.moveTo(w1.x, w1.y);
-      ctx.lineTo(w2.x, w2.y);
-      ctx.stroke();
-    });
-    this.vh.set("tram", 0.9);
 
     this.obj("m-townhall", 96, (ctx) => {
       prism(ctx, { x0: -0.48, x1: 0.48, y0: -0.48, y1: 0.48, z0: 0, z1: 6 }, 0xcfc6b2);
@@ -1144,21 +923,7 @@ export class Art {
       ctx.textBaseline = "middle";
       ctx.fillText("¢", x, y + 0.5);
     };
-    const crate = (ctx: Ctx) => {
-      ctx.fillStyle = "#2fb3a3";
-      ctx.fillRect(-7, -6, 14, 12);
-      ctx.strokeStyle = "#1a7a6e";
-      ctx.lineWidth = 1.2;
-      ctx.strokeRect(-7, -6, 14, 12);
-      ctx.beginPath();
-      ctx.moveTo(-7, -6);
-      ctx.lineTo(7, 6);
-      ctx.moveTo(7, -6);
-      ctx.lineTo(-7, 6);
-      ctx.stroke();
-    };
     bubble("ui-coins", 0xe0a020, (ctx) => coin(ctx));
-    bubble("ui-mats", 0x2fb3a3, crate);
     bubble("ui-noroof", 0xe0533a, (ctx) => {
       ctx.beginPath();
       ctx.moveTo(-8, 1);
@@ -1189,6 +954,5 @@ export class Art {
       ctx.lineTo(8, 8);
       ctx.stroke();
     });
-    this.bake("ui-coin", 20, 20, 10, 10, (ctx) => coin(ctx, 0, 0, 9));
   }
 }

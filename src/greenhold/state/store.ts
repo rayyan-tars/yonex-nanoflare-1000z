@@ -1,0 +1,307 @@
+/**
+ * The game store: owns the town and simulation, runs the clock, saves, and
+ * exposes actions for the UI and the scene. The town is mutable; anything
+ * that changes it bumps `rev` so React re-renders and emits a bus event so
+ * the scene can animate exactly what changed.
+ */
+import { piece, type Category } from "../model/pieces";
+import { deserialize, SAVE_KEY, serialize } from "../model/save";
+import { GOALS, analyze, catchUp, collectTaxes, newSim, tick, type Sim, type SimEvent } from "../model/sim";
+import { TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, upgradeTownHall, type Town } from "../model/world";
+
+export type Tool = { kind: "none" } | { kind: "build"; id: string } | { kind: "remove" };
+export type Panel = null | "townhall" | "stars" | "settings" | "intro";
+
+export interface Toast {
+  id: number;
+  text: string;
+  tone: "info" | "good" | "warn";
+}
+
+export interface BusEvents {
+  col: { i: number; change: "add" | "remove" | "ground" };
+  moveIn: { n: number };
+  goal: { id: string };
+  townhall: { level: number };
+  collect: { amount: number };
+  fail: { i: number; reason: string };
+  reset: Record<string, never>;
+  focus: { i: number };
+}
+
+export class Bus {
+  private map = new Map<keyof BusEvents, Set<(p: never) => void>>();
+  on<K extends keyof BusEvents>(k: K, fn: (p: BusEvents[K]) => void) {
+    if (!this.map.has(k)) this.map.set(k, new Set());
+    this.map.get(k)!.add(fn as (p: never) => void);
+    return () => void this.map.get(k)!.delete(fn as (p: never) => void);
+  }
+  emit<K extends keyof BusEvents>(k: K, p: BusEvents[K]) {
+    this.map.get(k)?.forEach((fn) => (fn as (p: BusEvents[K]) => void)(p));
+  }
+}
+
+const SETTINGS_KEY = "greenhold.settings.v1";
+const TICK = 0.25;
+
+function readLS(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeLS(key: string, value: string | null) {
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // Storage blocked (private mode): the game still plays, it just won't remember.
+  }
+}
+
+function freshTown(now: number) {
+  const t = newTown(Math.floor(Math.random() * 1e9), now);
+  // The village is already lived in.
+  t.residents = analyze(t, new Float32Array(t.cols.length)).housing;
+  return t;
+}
+
+export class GameStore {
+  readonly bus = new Bus();
+  town!: Town;
+  sim!: Sim;
+  rev = 0;
+  tool: Tool = { kind: "none" };
+  category: Category | null = null;
+  panel: Panel = null;
+  selected: number | null = null;
+  sound = true;
+  toasts: Toast[] = [];
+  awayFor = 0;
+  saveState: "new" | "loaded" | "repaired" = "new";
+  /** Shop pictures drawn by the game art. */
+  previews: Record<string, string> = {};
+  /** Screen position (CSS px) of a column, set by the scene. */
+  screenOf: ((i: number) => { x: number; y: number }) | null = null;
+  private listeners = new Set<() => void>();
+  private timer = 0;
+  private saveTimer = 0;
+  private toastId = 0;
+  private lastPersist = 0;
+
+  constructor(readonly now: () => number = () => Date.now()) {
+    this.load();
+  }
+
+  subscribe = (fn: () => void) => {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  };
+  getRev = () => this.rev;
+  changed() {
+    this.rev++;
+    this.listeners.forEach((fn) => fn());
+  }
+
+  private load() {
+    const now = this.now();
+    const text = readLS(SAVE_KEY);
+    const loaded = text ? deserialize(text) : null;
+    this.sim = newSim();
+    if (loaded) {
+      this.town = loaded.town;
+      if (loaded.air) this.sim.air.set(loaded.air);
+      this.saveState = "loaded";
+      this.awayFor = catchUp(this.town, this.sim, now);
+    } else {
+      this.town = freshTown(now);
+      this.saveState = text ? "repaired" : "new";
+      this.panel = "intro";
+      // Let the coal smoke build up so the problem is visible from the start.
+      for (let k = 0; k < 400; k++) tick(this.town, this.sim, TICK);
+      this.town.goal = 0;
+    }
+    this.town.lastTs = now;
+    this.sim.stats = analyze(this.town, this.sim.air);
+    try {
+      const s = JSON.parse(readLS(SETTINGS_KEY) ?? "{}");
+      if (typeof s.sound === "boolean") this.sound = s.sound;
+    } catch {
+      // Defaults.
+    }
+  }
+
+  start() {
+    if (this.timer) return;
+    this.timer = window.setInterval(() => this.step(), TICK * 1000);
+    this.saveTimer = window.setInterval(() => this.persist(), 5000);
+    window.addEventListener("pagehide", this.persist);
+  }
+
+  stop() {
+    window.clearInterval(this.timer);
+    window.clearInterval(this.saveTimer);
+    this.timer = 0;
+    window.removeEventListener("pagehide", this.persist);
+    this.persist();
+  }
+
+  persist = () => {
+    this.town.lastTs = this.now();
+    writeLS(SAVE_KEY, serialize(this.town, this.sim.air));
+    this.lastPersist = this.now();
+  };
+
+  private persistSoon() {
+    if (this.now() - this.lastPersist > 1500) this.persist();
+  }
+
+  step() {
+    for (const e of tick(this.town, this.sim, TICK)) this.handle(e);
+    this.town.lastTs = this.now();
+    this.changed();
+  }
+
+  private handle(e: SimEvent) {
+    if (e.type === "goal") {
+      const g = GOALS.find((x) => x.id === e.id)!;
+      this.bus.emit("goal", { id: e.id });
+      this.toast(`Done: ${g.name} (+${g.coins} coins)`, "good");
+      this.persist();
+    }
+    if (e.type === "moveIn") this.bus.emit("moveIn", { n: e.n });
+  }
+
+  // ------------------------------------------------------------------ actions
+  setTool(tool: Tool) {
+    this.tool = tool;
+    this.selected = null;
+    this.changed();
+  }
+
+  setCategory(c: Category | null) {
+    this.category = c;
+    if (c === null && this.tool.kind === "build") this.tool = { kind: "none" };
+    this.changed();
+  }
+
+  openPanel(p: Panel) {
+    this.panel = p;
+    this.changed();
+  }
+
+  setSound(on: boolean) {
+    this.sound = on;
+    writeLS(SETTINGS_KEY, JSON.stringify({ sound: on }));
+    this.changed();
+  }
+
+  toast(text: string, tone: Toast["tone"] = "info", ms = 3200) {
+    const t = { id: ++this.toastId, text, tone };
+    this.toasts = [...this.toasts.filter((x) => x.text !== text).slice(-2), t];
+    window.setTimeout(() => {
+      this.toasts = this.toasts.filter((x) => x.id !== t.id);
+      this.changed();
+    }, ms);
+    this.changed();
+  }
+
+  /** Tries to place the current tool's piece. Quiet = no toast (drag-painting). */
+  placeAt(i: number, quiet = false) {
+    if (this.tool.kind !== "build") return false;
+    const id = this.tool.id;
+    const ok = canPlace(this.town, i, id);
+    if (!ok.ok) {
+      if (!quiet) {
+        this.bus.emit("fail", { i, reason: ok.reason });
+        this.toast(ok.reason, "warn");
+      }
+      return false;
+    }
+    place(this.town, i, id);
+    this.bus.emit("col", { i, change: piece(id).kind === "ground" ? "ground" : "add" });
+    this.refresh();
+    return true;
+  }
+
+  removeAt(i: number, quiet = false) {
+    const info = removeInfo(this.town, i);
+    if (!info.ok) {
+      if (!quiet) {
+        this.bus.emit("fail", { i, reason: info.reason! });
+        this.toast(info.reason!, "warn");
+      }
+      return false;
+    }
+    const wasGround = !this.town.cols[i].s.length;
+    remove(this.town, i);
+    this.bus.emit("col", { i, change: wasGround ? "ground" : "remove" });
+    if (this.selected === i && !this.town.cols[i].s.length) this.selected = null;
+    this.refresh();
+    return true;
+  }
+
+  select(i: number | null) {
+    this.selected = i;
+    if (i !== null && i === idx(TOWN_HALL.x, TOWN_HALL.y)) {
+      this.panel = "townhall";
+      this.selected = null;
+    }
+    this.changed();
+  }
+
+  collect() {
+    const n = collectTaxes(this.town);
+    if (n > 0) {
+      this.bus.emit("collect", { amount: n });
+      this.persistSoon();
+    }
+    this.changed();
+    return n;
+  }
+
+  upgradeTownHall() {
+    const ok = thUpgradeCheck(this.town, this.sim.stats.starCount);
+    if (!ok.ok) {
+      this.toast(ok.reason, "warn");
+      return false;
+    }
+    upgradeTownHall(this.town);
+    this.bus.emit("townhall", { level: this.town.th });
+    this.toast(`Town Hall level ${this.town.th}! New pieces and taller buildings unlocked.`, "good");
+    this.persist();
+    this.changed();
+    return true;
+  }
+
+  reset() {
+    writeLS(SAVE_KEY, null);
+    this.town = freshTown(this.now());
+    this.sim = newSim();
+    for (let k = 0; k < 400; k++) tick(this.town, this.sim, TICK);
+    this.town.goal = 0;
+    this.sim.stats = analyze(this.town, this.sim.air);
+    this.tool = { kind: "none" };
+    this.category = null;
+    this.selected = null;
+    this.panel = "intro";
+    this.saveState = "new";
+    this.awayFor = 0;
+    this.bus.emit("reset", {});
+    this.persist();
+    this.changed();
+  }
+
+  setPreviews(p: Record<string, string>) {
+    this.previews = p;
+    this.changed();
+  }
+
+  /** Re-adds up the town after an edit (without advancing time). */
+  private refresh() {
+    this.sim.stats = analyze(this.town, this.sim.air);
+    this.persistSoon();
+    this.changed();
+  }
+}
