@@ -6,9 +6,11 @@ import { iso, type BakedTexture, type V2 } from "./art/iso";
 import { FLUE_TOP, GROUND_DEPTH, HUB, bakeArt, type ArtCatalog, type ArtFonts } from "./art/textures";
 import { CitizenCrowd } from "./citizens";
 import type { RoundReport } from "../model/report";
+import type { Category } from "../model/missions";
 import {
   BARRIER_POSTS,
   BENCH,
+  CITY_CHANGES,
   CLASSROOM,
   GATE_TILE,
   REPLACED_HOMES,
@@ -151,6 +153,9 @@ export class CityScene extends Phaser.Scene {
     pots: Phaser.GameObjects.Image[];
     bareBeds: Phaser.GameObjects.Image[];
   };
+  /** Each mission area's campus change (hidden until its school challenge is met). */
+  private cityProps!: Record<Category, Phaser.GameObjects.Image[]>;
+  private cityShown = new Set<Category>();
   /** Campus growth stage currently shown on the live campus. */
   private growthShown = -1;
   private ripplePending = false;
@@ -369,6 +374,13 @@ export class CityScene extends Phaser.Scene {
     this.put(a.schoolGate, SCHOOL_GATE.x, SCHOOL_GATE.y, depthAt(SCHOOL_GATE.x, SCHOOL_GATE.y));
     // Today's food-waste problem, gathered by the kitchen. Cleared as the campus grows.
     const at = (tex: BakedTexture, p: { x: number; y: number }, k = 1) => this.put(tex, p.x, p.y, depthAt(p.x, p.y)).setScale(k / tex.scale);
+    this.cityProps = {
+      water: CITY_CHANGES.water.map((p) => at(a.refillStation, p).setVisible(false)),
+      energy: CITY_CHANGES.energy.map((p) => this.put(a.classroomSolar, p.x, p.y, depthAt(CLASSROOM.x + CLASSROOM.w / 2, CLASSROOM.y + CLASSROOM.d / 2) + 0.02).setVisible(false)),
+      waste: CITY_CHANGES.waste.map((p) => at(a.recyclingStation, p).setVisible(false)),
+      food: CITY_CHANGES.food.map((p, i) => at(a.gardenBeds[i % a.gardenBeds.length], p).setVisible(false)),
+      transport: CITY_CHANGES.transport.map((p) => at(a.bikeRack, p).setVisible(false)),
+    };
     this.startProps = {
       wasteBin: at(a.foodWasteBin, START_PROPS.wasteBin, 1.25),
       tidyBin: at(a.foodWasteBinTidy, START_PROPS.wasteBin, 1.25).setVisible(false),
@@ -652,6 +664,48 @@ export class CityScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Mission areas whose school challenge is met change their part of the
+   * campus. On load they are simply there; a new one is revealed (once the
+   * missions panel has closed) as a small chain of growth from its spot.
+   */
+  private syncCity(state: EcoState, initial: boolean) {
+    if (this.capturing) return;
+    const changed = new Set(state.save.missions.cityChanged);
+    for (const cat of Object.keys(this.cityProps) as Category[]) {
+      const items = this.cityProps[cat];
+      if (!changed.has(cat)) {
+        if (this.cityShown.has(cat)) {
+          items.forEach((o) => o.setVisible(false));
+          this.cityShown.delete(cat);
+        }
+        continue;
+      }
+      if (this.cityShown.has(cat)) continue;
+      if (initial || this.reduced) {
+        items.forEach((o) => o.setVisible(true).setAlpha(1));
+        this.cityShown.add(cat);
+        if (!initial) this.deps.bus.emit("cityChanged", { category: cat });
+        continue;
+      }
+      if (state.overlay) continue; // wait until the player is back on the campus
+      this.cityShown.add(cat);
+      const first = items[0];
+      this.cameras.main.pan(first.x, first.y - 20, 700, "Sine.easeInOut");
+      this.time.delayedCall(650, () => {
+        this.rippleWave(first.x, first.y);
+        items.forEach((o, i) => {
+          const y = o.y;
+          const sx = o.scaleX;
+          const sy = o.scaleY;
+          o.setVisible(true).setAlpha(0).setY(y + 6).setScale(sx * 0.6, sy * 0.6);
+          this.tweens.add({ targets: o, alpha: 1, y, scaleX: sx, scaleY: sy, duration: 520, delay: 250 + i * 200, ease: "Back.easeOut", onStart: () => this.dustAt(o.x, y - 6) });
+        });
+      });
+      this.time.delayedCall(650 + 250 + items.length * 200 + 600, () => this.deps.bus.emit("cityChanged", { category: cat }));
+    }
+  }
+
   /** A brief warm ring on the ground so new waste is noticed, then gone. */
   private noticeAt(x: number, y: number) {
     const g = this.add.graphics().setDepth(DEPTH.ground + 3).setPosition(x, y);
@@ -827,6 +881,7 @@ export class CityScene extends Phaser.Scene {
     [sp.wasteBin, ...sp.bags, ...sp.pots, ...sp.bareBeds].forEach((o) => show(o, !smart));
     show(sp.tidyBin, false);
     show(sp.extraBag, false);
+    Object.values(this.cityProps).flat().forEach((o) => show(o, smart));
     // Business as usual withers the campus: dry ground, bare trees, no flowers.
     if (smart) this.groundImg.clearTint();
     else this.groundImg.setTint(0xd2bd92);
@@ -1379,6 +1434,8 @@ export class CityScene extends Phaser.Scene {
         this.applyGrowth(growth, false);
       }
     }
+
+    this.syncCity(state, initial);
 
     if (initial) {
       if (state.phase !== "planning") this.director.reset();

@@ -57,9 +57,12 @@ export function IntroOverlay() {
           Start today
         </button>
         <p className="eco-intro__brand">
-          <LogoMark size={22} /> EcoRise
+          <LogoMark size={22} /> Second Life: 2050
         </p>
-        <p className="eco-intro__note">A school food-waste game. The school and its numbers are fictional.</p>
+        <p className="eco-intro__note">
+          Small actions. Shared impact. A different future. Plan the lunch here, and take 2050 Missions for real-life actions.
+          The school and its numbers are fictional.
+        </p>
       </motion.section>
     </motion.div>
   );
@@ -99,7 +102,7 @@ export function AboutDialog() {
   return (
     <Dialog title="About the simulation" onClose={store.actions.closeOverlay} width={640}>
       <p className="eco-callout">
-        EcoRise is a hackathon prototype. Its numbers are simplified <strong>game assumptions</strong> chosen so the
+        Second Life: 2050 is a hackathon prototype. Its numbers are simplified <strong>game assumptions</strong> chosen so the
         trade-offs are visible and fair. They are not research findings or predictions about any real school.
       </p>
       <h3>How a lunch works in the model</h3>
@@ -173,7 +176,7 @@ export function AboutDialog() {
       <p>
         Credits, hot meals served and food use are game indicators, shown under <strong>Simulated lunch</strong>. Numbers
         entered in the Cafeteria Waste Audit are labelled <strong>School measurement</strong>, demonstration values are
-        labelled <strong>Demo data</strong>, and neither is ever mixed into game numbers. EcoRise converts nothing into
+        labelled <strong>Demo data</strong>, and neither is ever mixed into game numbers. Second Life: 2050 converts nothing into
         CO₂, money or water savings.
       </p>
       <p className="eco-muted">
@@ -246,7 +249,7 @@ export function SettingsDialog() {
               : "Progress and settings are saved in this browser only."}
         </p>
         <button type="button" className="eco-btn eco-btn--danger-outline" onClick={() => store.actions.openOverlay("reset-confirm")}>
-          Reset EcoRise…
+          Reset Second Life: 2050…
         </button>
       </fieldset>
       <fieldset className="eco-fieldset">
@@ -272,9 +275,9 @@ export function ResetConfirmDialog() {
   const { store, bus } = useEcoEnv();
   const playtests = useEco((s) => s.playtest.sessions.length);
   return (
-    <Dialog title="Reset EcoRise?" onClose={() => store.actions.openOverlay("settings")} width={440} tone="danger">
+    <Dialog title="Reset Second Life: 2050?" onClose={() => store.actions.openOverlay("settings")} width={440} tone="danger">
       <p>
-        This clears your EcoRise progress, plans and settings in this browser and shows the introduction again. Data
+        This clears your Second Life: 2050 progress, plans and settings in this browser and shows the introduction again. Data
         from other sites and apps is not touched. This can&rsquo;t be undone.
       </p>
       {playtests > 0 && (

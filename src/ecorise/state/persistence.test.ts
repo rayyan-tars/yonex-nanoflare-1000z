@@ -610,3 +610,50 @@ describe("saves from before campus growth and sound", () => {
     expect(r.data.story.growth).toBe(0);
   });
 });
+
+describe("missions in the store and the save", () => {
+  const at = (iso: string) => () => new Date(iso).getTime();
+  function storeAt(iso: string, storage = new MemoryStorage()) {
+    const s = createEcoStore({ initialSave: defaultSave(), loadStatus: "fresh", storage, systemReducedMotion: false, now: at(iso) });
+    s.actions.enterCity();
+    return { s, storage };
+  }
+
+  it("records a small mission once per day and needs a photo for a bigger one", () => {
+    const { s } = storeAt("2026-10-07T10:00:00");
+    expect(s.actions.completeMission("water-tap")).toBeNull();
+    expect(s.actions.completeMission("water-tap")).toBe("already");
+    expect(s.actions.completeMission("big-cleanup")).toBe("photo-needed");
+    expect(s.actions.completeMission("big-cleanup", "data:image/jpeg;base64,AAA")).toBeNull();
+    expect(s.getState().save.missions.completions.map((c) => c.missionId)).toEqual(["water-tap", "big-cleanup"]);
+    expect(s.getState().save.progress.credits).toBe(defaultSave().progress.credits);
+  });
+
+  it("meeting a school challenge changes that part of the campus and opens 2050", () => {
+    const storage = new MemoryStorage();
+    for (const [i, day] of ["2026-10-06", "2026-10-07"].entries()) {
+      const s = createEcoStore({ initialSave: i ? loadSave(storage).data : defaultSave(), loadStatus: "loaded", storage, systemReducedMotion: false, now: at(`${day}T09:00:00`) });
+      expect(s.actions.completeMission("energy-light")).toBeNull();
+    }
+    const saved = loadSave(storage).data;
+    expect(saved.missions.cityChanged).toEqual(["energy"]);
+    expect(saved.story.futuresUnlocked).toBe(true);
+  });
+
+  it("older saves without missions load cleanly; invalid entries are dropped", () => {
+    const st = new MemoryStorage();
+    const old = defaultSave() as unknown as Record<string, unknown>;
+    delete old.missions;
+    st.setItem(SAVE_KEY, JSON.stringify(old));
+    expect(loadSave(st)).toMatchObject({ status: "loaded", data: { missions: { completions: [], cityChanged: [] } } });
+    const bad = defaultSave();
+    st.setItem(
+      SAVE_KEY,
+      JSON.stringify({ ...bad, missions: { completions: [{ missionId: "fake", day: "2026-10-07" }, { missionId: "water-tap", day: "2026-10-07" }], cityChanged: ["water", "moon"] } }),
+    );
+    const r = loadSave(st);
+    expect(r.status).toBe("repaired");
+    expect(r.data.missions.completions.map((c) => c.missionId)).toEqual(["water-tap"]);
+    expect(r.data.missions.cityChanged).toEqual(["water"]);
+  });
+});

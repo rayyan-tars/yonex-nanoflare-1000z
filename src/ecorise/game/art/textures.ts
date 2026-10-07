@@ -1229,6 +1229,99 @@ export function bareBedSketch(): Sketch {
   return s;
 }
 
+// --------------------------------------------------------------- mission city changes
+
+/** A water refill station: a slim blue fountain with a bottle tap. Centred on local (0, 0). */
+export function refillStationSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 3, 13, 5, { fill: PAL.shadow, alpha: 0.25 });
+  s.box(-0.12, -0.12, 0, 0.24, 0.24, 20, wallShades(0x3f7fa8), edge(0.45, 0.6));
+  s.box(-0.14, -0.14, 20, 0.28, 0.28, 2, wallShades(0xd9e6ec), edge(0.4, 0.5));
+  s.leftRect(0.12, -0.08, 0.08, 10, 16, 0xbfe3f2, null);
+  const sp = iso(0, 0.13, 14);
+  s.line([sp, { x: sp.x, y: sp.y + 3 }], 0x8fd3f0, 0.9);
+  // A drop on the sign.
+  const d = iso(0, 0.12, 6);
+  s.circle(d.x, d.y, 1.2, { fill: 0xffffff });
+  return s;
+}
+
+/** Solar panels for the classroom block's roof (same footprint as classroomSketch). */
+export function classroomSolarSketch(): Sketch {
+  const s = new Sketch();
+  const z = 49;
+  s.custom([0, -70, 120, 10], (ctx) => {
+    for (let r = 0; r < 2; r++) {
+      for (let k = 0; k < 4; k++) {
+        const x0 = 0.25 + k * 0.65;
+        const y0 = 0.3 + r * 0.75;
+        const pts = P([[x0, y0, z + 3], [x0 + 0.55, y0, z + 3], [x0 + 0.55, y0 + 0.6, z], [x0, y0 + 0.6, z]]);
+        polyPath(ctx, pts);
+        ctx.fillStyle = linear(ctx, pts[0], pts[2], [[0, "#3d5a78"], [1, "#1f3048"]]);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(190,215,235,0.55)";
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+      }
+    }
+  });
+  return s;
+}
+
+/** A recycling station: three coloured bins under a small roof. Centred on local (0, 0). */
+export function recyclingStationSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 3, 22, 7, { fill: PAL.shadow, alpha: 0.22 });
+  const cols = [0x2f7fbf, 0xe0b23a, 0x3f8f4f];
+  cols.forEach((c, i) => s.box(-0.36 + i * 0.25, -0.12, 0, 0.22, 0.24, 11, wallShades(c), edge(0.4, 0.5)));
+  for (const x of [-0.38, 0.38]) s.box(x, -0.04, 0, 0.04, 0.04, 18, wallShades(0x5a4331), edge(0.3, 0.4));
+  s.box(-0.42, -0.18, 18, 0.84, 0.36, 1.4, wallShades(PAL.forest), edge(0.4, 0.5));
+  return s;
+}
+
+/** A bike rack with two bikes. Centred on local (0, 0). */
+export function bikeRackSketch(): Sketch {
+  const s = new Sketch();
+  s.ellipse(0, 2, 24, 7, { fill: PAL.shadow, alpha: 0.2 });
+  s.custom([-30, -24, 30, 6], (ctx) => {
+    ctx.lineCap = "round";
+    for (const x of [-0.3, 0, 0.3]) {
+      const a = iso(x, -0.05, 0);
+      const b = iso(x, -0.05, 7);
+      const c = iso(x, 0.05, 7);
+      const d = iso(x, 0.05, 0);
+      ctx.strokeStyle = "#7c8a8f";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.stroke();
+    }
+    for (const [x, col] of [[-0.18, "#c0392b"], [0.16, "#2f7fbf"]] as const) {
+      const r1 = iso(x, -0.2, 3);
+      const r2 = iso(x, 0.2, 3);
+      ctx.strokeStyle = "#2a2e31";
+      ctx.lineWidth = 0.9;
+      for (const w of [r1, r2]) {
+        ctx.beginPath();
+        ctx.ellipse(w.x, w.y, 3.2, 3.2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.2;
+      const top = iso(x, 0, 6.5);
+      ctx.beginPath();
+      ctx.moveTo(r1.x, r1.y);
+      ctx.lineTo(top.x, top.y);
+      ctx.lineTo(r2.x, r2.y);
+      ctx.stroke();
+    }
+  });
+  return s;
+}
+
 /** Full rubbish bags left beside a bin. Centred on local (0, 0). */
 export function bagsSketch(): Sketch {
   const s = new Sketch();
@@ -2354,6 +2447,10 @@ export interface ArtCatalog {
   foodWasteBin: BakedTexture;
   foodWasteBinTidy: BakedTexture;
   bareBed: BakedTexture;
+  refillStation: BakedTexture;
+  classroomSolar: BakedTexture;
+  recyclingStation: BakedTexture;
+  bikeRack: BakedTexture;
   table: BakedTexture;
   crates: BakedTexture;
   flowerbeds: BakedTexture[];
@@ -2446,6 +2543,10 @@ export function bakeArt(scene: Phaser.Scene, fonts: ArtFonts): ArtCatalog {
     foodWasteBin: b("food-waste-bin", foodWasteBinSketch(), 3),
     foodWasteBinTidy: b("food-waste-bin-tidy", foodWasteBinSketch(false), 3),
     bareBed: b("bare-bed", bareBedSketch(), 3),
+    refillStation: b("refill-station", refillStationSketch(), 3),
+    classroomSolar: b("classroom-solar", classroomSolarSketch(), 2.5),
+    recyclingStation: b("recycling-station", recyclingStationSketch(), 3),
+    bikeRack: b("bike-rack", bikeRackSketch(), 3),
     table: b("table", tableSketch()),
     crates: b("crates", cratesSketch()),
     flowerbeds: [0, 1, 2].map((v) => b(`flowerbed-${v}`, flowerbedSketch(v))),

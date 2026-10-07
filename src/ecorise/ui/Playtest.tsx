@@ -115,7 +115,7 @@ export function PlaytestFinishDialog() {
         <textarea rows={2} maxLength={MAX_ANSWER_LENGTH} value={change} onChange={(e) => setChange(e.target.value)} />
       </label>
       <fieldset className="eco-q">
-        <legend className="eco-q__label">3. How easy was EcoRise to understand?</legend>
+        <legend className="eco-q__label">3. How easy was Second Life: 2050 to understand?</legend>
         <div className="eco-scale" role="radiogroup" aria-label="1 is very hard, 5 is very easy">
           {CLARITY.map((n) => (
             <button
@@ -137,9 +137,9 @@ export function PlaytestFinishDialog() {
       </fieldset>
       <fieldset className="eco-q">
         <legend className="eco-q__label">
-          Would you play another EcoRise challenge? <span className="eco-muted">(optional)</span>
+          Would you play another Second Life: 2050 challenge? <span className="eco-muted">(optional)</span>
         </legend>
-        <div className="eco-scale" role="radiogroup" aria-label="Would you play another EcoRise challenge?">
+        <div className="eco-scale" role="radiogroup" aria-label="Would you play another Second Life: 2050 challenge?">
           {AGAIN.map(([v, label]) => (
             <button
               key={v}

@@ -76,6 +76,18 @@ export const START_PROPS = {
   ],
 } as const;
 
+/** Where each mission area changes the campus once its school challenge is met. */
+export const CITY_CHANGES = {
+  water: [{ x: 1.55, y: 7.5 }],
+  energy: [{ x: CLASSROOM.x, y: CLASSROOM.y }],
+  waste: [{ x: 13.35, y: 8.55 }],
+  food: [
+    { x: 9.2, y: 12.3 },
+    { x: 10.2, y: 12.3 },
+  ],
+  transport: [{ x: 7.75, y: 12.45 }],
+} as const;
+
 /** Tile a citizen stands on when "at the door" of each home. */
 export function doorTile(h: HomeSpec): { x: number; y: number } {
   return h.door === "left" ? { x: h.x, y: h.y + 1 } : { x: h.x + 1, y: h.y };

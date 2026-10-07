@@ -5,9 +5,10 @@ export function BootSplash({ leaving = false }: { leaving?: boolean }) {
     <div className={`eco-boot${leaving ? " eco-boot--leaving" : ""}`} role="status" aria-live="polite">
       <div className="eco-boot__inner">
         <LogoMark size={52} />
-        <p className="eco-boot__title">EcoRise</p>
+        <p className="eco-boot__title">Second Life: 2050</p>
+        <p className="eco-boot__tagline">Small actions. Shared impact. A different future.</p>
         <p className="eco-boot__msg">
-          <span className="eco-spinner" aria-hidden="true" /> Building the town…
+          <span className="eco-spinner" aria-hidden="true" /> Building your school…
         </p>
       </div>
     </div>

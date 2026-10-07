@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { EcoRiseLoader } from "@/ecorise/ui/EcoRiseLoader";
 
 export const metadata: Metadata = {
-  title: "EcoRise · Run the Lunch Council",
+  title: "Second Life: 2050 · Small actions. Shared impact. A different future.",
   description:
-    "A city-building prototype about planning school lunches that feed everyone and waste less food.",
+    "A school sustainability game: small missions from 2050, a shared school goal, and a campus that changes with every action.",
 };
 
 export const viewport: Viewport = {

@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { prepSession } from "./PrepBar";
+import { useOpenMissions } from "./Missions";
 import { GROWTH_STAGES } from "../state/persistence";
 import { GROWTH_NAMES, prefersReducedMotion } from "../state/store";
 import { useAnimatedNumber } from "./Campus";
@@ -30,7 +31,9 @@ export function TopBar() {
     <header className="eco-topbar">
       <div className="eco-bar eco-brand">
         <LogoMark size={30} />
-        <p className="eco-brand__name">EcoRise</p>
+        <p className="eco-brand__name">
+          Second Life <span>2050</span>
+        </p>
       </div>
       {!serving && (
         <div className="eco-bar eco-status">
@@ -99,8 +102,25 @@ export function Dock() {
   const { store, bus } = useEcoEnv();
   const selection = useEco((s) => s.selection);
   const campus = useEco((s) => s.save.progress.campus);
+  const open = useOpenMissions();
   return (
     <div className="eco-dock">
+      <button
+        type="button"
+        className="eco-dock__btn eco-dock__btn--missions"
+        onClick={() => {
+          store.actions.clearSelection();
+          store.actions.openOverlay("missions");
+        }}
+        aria-label={`2050 Missions, ${open} open today`}
+      >
+        2050 Missions
+        {open > 0 && (
+          <span className="eco-dock__badge" aria-hidden="true">
+            {open}
+          </span>
+        )}
+      </button>
       {selection !== "kitchen" && (
         <button type="button" className="eco-dock__btn" data-place="kitchen" onClick={() => store.actions.select("kitchen")}>
           <PlayIcon size={14} /> Plan lunch

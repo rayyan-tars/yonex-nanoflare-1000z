@@ -19,6 +19,7 @@ import {
   type AuditSource,
 } from "../model/audit";
 import { toggleVoiceAction } from "../model/planning";
+import { completeMission as completeMissionRule, dayKey, newlyMet, type CompleteRefusal } from "../model/missions";
 import { computeRoundReport, type RoundReport } from "../model/report";
 import { creditAttempt, type CreditReason } from "../model/rewards";
 import { BUILDING_COSTS } from "../model/config";
@@ -102,6 +103,8 @@ export type Overlay =
   | "playtest-finish"
   | "playtest-summary"
   | "futures"
+  | "missions"
+  | "impact"
   | null;
 export type BootStatus = "loading" | "ready" | "error";
 /**
@@ -204,6 +207,10 @@ export interface EcoActions {
   markMessageSeen(): void;
   /** The real-world audit prompt was answered (either way). */
   markAuditPrompted(): void;
+  /** Marks a real-life mission done for today (a bigger mission needs a photo). */
+  completeMission(missionId: string, photo?: string): CompleteRefusal | null;
+  /** Today's local calendar day, from the store's clock. */
+  today(): string;
   openFutures(withIntro?: boolean): void;
   setMotion(motion: MotionSetting): void;
   setQuality(quality: QualitySetting): void;
@@ -613,6 +620,18 @@ export function createEcoStore(options: {
       markMessageSeen: () => {
         if (state.save.story.messageSeen) return;
         updateSave((s) => ({ ...s, story: { ...s.story, messageSeen: true } }));
+      },
+      today: () => dayKey(now()),
+      completeMission: (missionId: string, photo?: string) => {
+        const day = dayKey(now());
+        const r = completeMissionRule(state.save.missions, missionId, day, photo);
+        if (r.refused) return r.refused;
+        // A school challenge met by this action: its part of the campus changes, and 2050 can be viewed.
+        const met = newlyMet(r.save);
+        const missions = met.length ? { ...r.save, cityChanged: [...r.save.cityChanged, ...met] } : r.save;
+        updateSave((s) => ({ ...s, missions, story: met.length ? { ...s.story, futuresUnlocked: true } : s.story }));
+        persistNow();
+        return null;
       },
       markAuditPrompted: () => {
         if (state.save.story.auditPrompted) return;

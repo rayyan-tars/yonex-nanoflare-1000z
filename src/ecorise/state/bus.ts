@@ -6,6 +6,8 @@ export interface BusEvents {
   establish: undefined;
   /** The campus now shows this growth stage (after the Ripple, or at once). */
   growthShown: { level: number; rippled: boolean };
+  /** A mission area's campus change has just appeared (school challenge met). */
+  cityChanged: { category: "water" | "energy" | "waste" | "food" | "transport" };
   /** Lunch playback: diners handled so far (in queue order). */
   serviceProgress: { processed: number };
   serviceSpeed: { speed: 1 | 2 };

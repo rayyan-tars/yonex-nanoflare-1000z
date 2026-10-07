@@ -16,12 +16,14 @@ import { AboutDialog, IntroOverlay, ResetConfirmDialog, SettingsDialog, Toast } 
 import { MissionPanel } from "./MissionPanel";
 import { FuturesOverlay } from "./Futures";
 import { GameSounds } from "./GameSounds";
+import { CityInvite, ImpactDashboard, MissionsPanel } from "./Missions";
+import type { Category } from "../model/missions";
 import { DemoResetDialog, PlaytestFinishDialog, PlaytestStartDialog, PlaytestSummaryDialog } from "./Playtest";
 import { AuditInvite, CompactResult, ResultsPanel, ServiceHud, TimelineInvite } from "./Round";
 
 const LOAD_NOTICES: Record<string, string | undefined> = {
-  unreadable: "Saved EcoRise data couldn't be read, so a fresh game was started.",
-  obsolete: "Saved EcoRise data was from an older version, so a fresh game was started.",
+  unreadable: "Saved Second Life: 2050 data couldn't be read, so a fresh game was started.",
+  obsolete: "Saved Second Life: 2050 data was from an older version, so a fresh game was started.",
   repaired: "Some saved settings were invalid and have been reset.",
   unavailable: "This browser is blocking storage, so progress won't be saved.",
 };
@@ -112,7 +114,8 @@ function Shell({ fonts }: { fonts: Fonts }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       const s = store.getState();
-      if (!s.overlay && !s.introOpen && s.selection) store.actions.clearSelection();
+      if (s.overlay === "missions") store.actions.closeOverlay();
+      else if (!s.overlay && !s.introOpen && s.selection) store.actions.clearSelection();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -162,16 +165,20 @@ function Shell({ fonts }: { fonts: Fonts }) {
     };
   }, [bus, store]);
 
+  // A mission challenge changed the campus: invite the player to see 2050.
+  const [cityInvite, setCityInvite] = useState<Category | null>(null);
+  useEffect(() => bus.on("cityChanged", ({ category }) => setCityInvite(category)), [bus]);
+
   // Back from 2050 for the first time: the real-world step.
   const auditPrompted = useEco((s) => s.save.story.auditPrompted);
   const [ctaOpen, setCtaOpen] = useState(false);
-  const prevOverlay = useRef(overlay);
-  useEffect(() => {
-    const was = prevOverlay.current;
-    prevOverlay.current = overlay;
-    // Set at once (so the Timeline invitation never flashes back); the card itself fades in a moment later.
-    if (was === "futures" && overlay === null && !auditPrompted) setCtaOpen(true);
-  }, [overlay, auditPrompted]);
+  // Adjusted during render, not in an effect, so the Timeline invitation never mounts for a frame
+  // between closing 2050 and the CTA; the card itself fades in a moment later.
+  const [prevOverlay, setPrevOverlay] = useState(overlay);
+  if (prevOverlay !== overlay) {
+    setPrevOverlay(overlay);
+    if (prevOverlay === "futures" && overlay === null && !auditPrompted) setCtaOpen(true);
+  }
   const showCta = ctaOpen && !auditPrompted && !overlay;
 
   // Frame the kitchen, leftovers and bin beside the results card.
@@ -192,12 +199,17 @@ function Shell({ fonts }: { fonts: Fonts }) {
         <div className="eco-grade" aria-hidden="true" />
 
         {ready && (
-          <div className="eco-hud" inert={introOpen || !!overlay || showCta ? true : undefined}>
+          <div className="eco-hud" inert={introOpen || (!!overlay && overlay !== "missions") || showCta ? true : undefined}>
             <TopBar />
             {phase === "planning" && selection !== "kitchen" && <Dock />}
             {/* Separate presence groups: one piece's exit never holds up another's. */}
-            <AnimatePresence>{phase === "planning" && !selection && hintVisible && <LunchHint key="hint" />}</AnimatePresence>
-            <AnimatePresence>{phase === "planning" && selection === "kitchen" && <PrepBar key="prep" />}</AnimatePresence>
+            <AnimatePresence>{phase === "planning" && !selection && hintVisible && !cityInvite && <LunchHint key="hint" />}</AnimatePresence>
+            <AnimatePresence>{phase === "planning" && selection === "kitchen" && !overlay && <PrepBar key="prep" />}</AnimatePresence>
+            <AnimatePresence>
+              {cityInvite && !overlay && !showCta && phase !== "serving" && (
+                <CityInvite key={`city-${cityInvite}`} category={cityInvite} onDone={() => setCityInvite(null)} />
+              )}
+            </AnimatePresence>
             <AnimatePresence>
               {phase === "results" && round && inviteFor === round.attemptId && !overlay && !showCta && <TimelineInvite key={`invite-${round.attemptId}`} />}
             </AnimatePresence>
@@ -213,6 +225,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
             </AnimatePresence>
             <div ref={panelSlotRef} className={`eco-panel-slot${phase === "results" ? " eco-panel-slot--wide" : ""}`}>
               <AnimatePresence mode="wait">
+                {overlay === "missions" && <MissionsPanel key="missions" />}
                 {phase === "planning" && selection === "meadow" && <PlotInfo key="meadow" />}
                 {phase === "planning" && selection === "mission" && <MissionPanel key="mission" />}
                 {phase === "building" && selection === "meadow" && <BuildCard key="build" />}
@@ -234,6 +247,7 @@ function Shell({ fonts }: { fonts: Fonts }) {
           {overlay === "playtest-summary" && <PlaytestSummaryDialog key="pt-summary" />}
           {overlay === "futures" && <FuturesOverlay key="futures" />}
           {showCta && <AuditInvite key="audit-cta" />}
+          {overlay === "impact" && <ImpactDashboard key="impact" />}
         </AnimatePresence>
 
         {boot.status === "loading" && <BootSplash />}

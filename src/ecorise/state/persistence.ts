@@ -1,3 +1,4 @@
+import { CATEGORIES, missionDef, type Category, type Completion, type MissionsSave } from "../model/missions";
 import { BALANCE, REWARDS } from "../model/config";
 import { NO_VOICE, voiceTokensUsed } from "../model/planning";
 import { EMPTY_LEDGER, type RewardLedger, type ScenarioLedgerEntry } from "../model/rewards";
@@ -39,6 +40,8 @@ export interface SaveData {
   mission: MissionSave;
   /** Light story layer: only what is needed to show each moment once. */
   story: StoryState;
+  /** Second Life: 2050 missions: real actions the player marked done. */
+  missions: MissionsSave;
 }
 
 export interface StoryState {
@@ -93,6 +96,7 @@ export function defaultSave(): SaveData {
     draft: { voice: { ...NO_VOICE }, policy: { ...DEFAULT_POLICY } },
     progress: { credits: REWARDS.startingCredits, ledger: EMPTY_LEDGER, best: {}, last: null, campus: { ...DEFAULT_CAMPUS } },
     mission: { ...DEFAULT_MISSION },
+    missions: { completions: [], cityChanged: [] },
     story: { ...DEFAULT_STORY },
   };
 }
@@ -143,6 +147,7 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
     progress: d.progress,
     mission: d.mission,
     story: d.story,
+    missions: d.missions,
   };
 
   const draft = isRecord(raw.draft) ? raw.draft : {};
@@ -209,6 +214,27 @@ export function validateSave(raw: unknown): { data: SaveData; repaired: boolean 
   }
 
   // Added with the story layer: absent is normal.
+  // Added with the missions layer: absent is normal. Each entry must name a real mission.
+  if (raw.missions !== undefined) {
+    const ms = isRecord(raw.missions) ? raw.missions : {};
+    const list = Array.isArray(ms.completions) ? ms.completions : [];
+    const completions: Completion[] = [];
+    for (const c of list) {
+      const m = isRecord(c) && typeof c.missionId === "string" ? missionDef(c.missionId) : null;
+      const okDay = isRecord(c) && typeof c.day === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.day);
+      if (!m || !okDay) {
+        repaired = true;
+        continue;
+      }
+      const photo = isRecord(c) && typeof c.photo === "string" && c.photo.startsWith("data:image/") && c.photo.length < 300_000 ? c.photo : undefined;
+      completions.push({ missionId: m.id, category: m.category, day: c.day as string, big: m.size === "big", ...(photo ? { photo } : {}) });
+    }
+    const valid = new Set(CATEGORIES.map((x) => x.id));
+    const changed = Array.isArray(ms.cityChanged) ? (ms.cityChanged.filter((x) => typeof x === "string" && valid.has(x as Category)) as Category[]) : [];
+    if (!Array.isArray(ms.completions) || !Array.isArray(ms.cityChanged)) repaired = true;
+    out.missions = { completions, cityChanged: [...new Set(changed)] };
+  }
+
   if (raw.story !== undefined) {
     const st = isRecord(raw.story) ? raw.story : {};
     out.story = {
