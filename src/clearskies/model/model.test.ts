@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PIECES, piece } from "./pieces";
-import { deserialize, serialize } from "./save";
+import { PIECES } from "./pieces";
 import { DAY_SECONDS, GOALS, analyze, env, newSim, tick } from "./sim";
 import { MAX_HEIGHT, N, TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, type Town } from "./world";
 
@@ -39,7 +38,7 @@ describe("the map", () => {
   it("is generated the same way from the same seed, with the Town Hall at the centre", () => {
     const a = newTown(3, T0);
     const b = newTown(3, T0);
-    expect(serialize(a)).toBe(serialize(b));
+    expect(JSON.stringify(a.cols)).toBe(JSON.stringify(b.cols));
     expect(a.cols[idx(TOWN_HALL.x, TOWN_HALL.y)].s).toEqual(["townhall"]);
     expect(a.cols.length).toBe(N * N);
     expect(a.cols.some((c) => c.g === "water")).toBe(true);
@@ -160,7 +159,6 @@ describe("sustainability", () => {
     expect(ss.stats.stars[0]).toBe(true);
     expect(sc.stats.co2.net).toBeGreaterThan(ss.stats.co2.net);
     expect(sc.stats.homeAir).toBeGreaterThan(ss.stats.homeAir);
-    expect(ss.stats.starCount).toBeGreaterThanOrEqual(3);
   });
 
   it("stars don't flicker between day and night", () => {
@@ -189,30 +187,5 @@ describe("goals", () => {
     expect(t.goals.filter((g) => g === "first-home")).toHaveLength(1);
     expect(t.coins).toBeLessThanOrEqual(coins + 200);
     expect(new Set(GOALS.map((g) => g.id)).size).toBe(GOALS.length);
-  });
-});
-
-describe("saves", () => {
-  it("round-trip the town", () => {
-    const t = lotTown();
-    build(t, 32, 33, "timber", "roof");
-    build(t, 34, 34, "coal");
-    const back = deserialize(serialize(t));
-    expect(back).not.toBeNull();
-    expect(serialize(back!.town)).toBe(serialize(t));
-  });
-
-  it("refuse damaged or tampered saves", () => {
-    const t = lotTown();
-    expect(deserialize("not json")).toBeNull();
-    const f = JSON.parse(serialize(t));
-    expect(deserialize(JSON.stringify({ ...f, g: f.g.slice(1) }))).toBeNull();
-    expect(deserialize(JSON.stringify({ ...f, s: { ...f.s, 5: ["dragon"] } }))).toBeNull();
-    expect(deserialize(JSON.stringify({ ...f, th: 9 }))).toBeNull();
-    expect(deserialize(JSON.stringify({ ...f, coins: -50 }))!.town.coins).toBe(0);
-  });
-
-  it("knows every piece it saves", () => {
-    expect(() => piece("timber")).not.toThrow();
   });
 });

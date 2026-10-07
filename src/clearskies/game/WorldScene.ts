@@ -1,12 +1,12 @@
 import Phaser from "phaser";
 import { PIECES, piece, type PieceDef } from "../model/pieces";
 import { env, windAngle, type Env } from "../model/sim";
-import { N, PAVED, TOWN_HALL, building, canPlace, idx, inside, removeInfo, top, xy, type Column } from "../model/world";
-import type { GameStore } from "../state/store";
+import { N, PAVED, TOWN_HALL, building, idx, inside, top, xy } from "../model/world";
+import type { Store } from "../state/store";
 import { Art, BH, P, RES } from "./art";
 
 export interface SceneDeps {
-  store: GameStore;
+  store: Store;
   resolution: number;
   reduced: boolean;
   onReady: () => void;
@@ -47,10 +47,8 @@ interface Agent {
 }
 
 const GROUND_DEPTH = -100000;
-const OVERLAY_DEPTH = -50000;
 const SMOG_DEPTH = 900000;
 const UI_DEPTH = 950000;
-const MAX_LEVEL = 12;
 const CAR_COLORS = [0xe8e8e8, 0xd9534f, 0x3a6fb0, 0x2b2f36, 0xf0c040, 0x5aa36a, 0x9aa3ab];
 const SHIRTS = [0xe05a47, 0x3f7fd6, 0xf2c230, 0x4cae4c, 0x8e6fd8, 0xffffff, 0xf08a3c];
 
@@ -61,25 +59,15 @@ export const texFor = (p: PieceDef) => (p.kind === "block" ? `b-${p.id}` : p.kin
 export class WorldScene extends Phaser.Scene {
   private deps!: SceneDeps;
   private art!: Art;
-  private store!: GameStore;
+  private store!: Store;
   private ground: Phaser.GameObjects.Image[] = [];
   private cols: Part[][] = [];
   private builds = new Map<number, Phaser.GameObjects.Image>();
-  private bars!: Phaser.GameObjects.Graphics;
-  private airGfx!: Phaser.GameObjects.Graphics;
-  private ghost!: Phaser.GameObjects.Image;
-  private ring!: Phaser.GameObjects.Image;
-  private selRing!: Phaser.GameObjects.Image;
-  private hovered = -1;
-  private hoverLevel = 0;
   private agents: Agent[] = [];
   private roads: number[] = [];
   private walkTiles: number[] = [];
   private bikeTiles: number[] = [];
   private smog: { img: Phaser.GameObjects.Image; target: number; i: number }[] = [];
-  private bubbles!: { coins: Phaser.GameObjects.Image; mats: Phaser.GameObjects.Image };
-  private badges: Phaser.GameObjects.Image[] = [];
-  private thLabel!: Phaser.GameObjects.Text;
   private butterflies: Phaser.GameObjects.Image[] = [];
   private offs: (() => void)[] = [];
   private keys = new Set<string>();
@@ -88,15 +76,16 @@ export class WorldScene extends Phaser.Scene {
   private zoomTarget = 1;
   private zoomAnchor: { sx: number; sy: number } | null = null;
   private vel = { x: 0, y: 0 };
-  private drag: { id: number; x: number; y: number; moved: boolean; pan: boolean; painted: Set<number> } | null = null;
+  private drag: { id: number; x: number; y: number } | null = null;
+  /** A brown haze over the whole view, as thick as the air is dirty where people live. */
+  private haze!: Phaser.GameObjects.Rectangle;
+  /** Camera position at the start, so the "after" picture matches the "before" one. */
+  private pose: { x: number; y: number; zoom: number } | null = null;
   private pinch: { d: number; z: number; mx: number; my: number } | null = null;
   private lastSlow = 0;
   private lastWater = 0;
   private waterFrame = 0;
   private lastSmoke = 0;
-  private spaceDown = false;
-  private needHover = true;
-  private rev = -1;
   private ready = false;
 
   constructor() {
@@ -156,16 +145,7 @@ export class WorldScene extends Phaser.Scene {
       const r = P(N - 1, k);
       this.put("edge-right", r.x, r.y, GROUND_DEPTH - 10);
     }
-    this.airGfx = this.add.graphics().setDepth(OVERLAY_DEPTH);
-    this.bars = this.add.graphics().setDepth(UI_DEPTH + 10);
-    this.ring = this.put("fx-ring", 0, 0, OVERLAY_DEPTH + 1).setVisible(false);
-    this.selRing = this.put("fx-ring", 0, 0, OVERLAY_DEPTH + 2).setVisible(false).setTint(0xffe28a);
-    this.ghost = this.add.image(0, 0, "fx-ring").setAlpha(0.65).setVisible(false).setScale(1 / RES);
-    this.thLabel = this.add
-      .text(0, 0, "", { fontFamily: "Fredoka, system-ui, sans-serif", fontSize: "22px", color: "#ffffff", stroke: "#2c5a3a", strokeThickness: 5 })
-      .setOrigin(0.5)
-      .setScale(0.5)
-      .setDepth(UI_DEPTH);
+    this.haze = this.add.rectangle(0, 0, 10, 10, 0x8a7653).setOrigin(0).setDepth(SMOG_DEPTH + 5).setAlpha(0);
     for (let i = 0; i < N * N; i++) {
       this.refreshGround(i);
       this.syncColumn(i, null);
@@ -177,15 +157,6 @@ export class WorldScene extends Phaser.Scene {
         const img = this.add.image(p.x, p.y - 34, "fx-smog").setScale(1.6 / RES).setDepth(SMOG_DEPTH).setTint(0x8f7f62).setAlpha(0);
         this.smog.push({ img, target: 0, i: idx(x, y) });
       }
-    const bubble = (key: string, kind: "coins" | "mats") => {
-      const b = this.put(key, 0, 0, UI_DEPTH + 5).setVisible(false).setInteractive({ cursor: "pointer" });
-      b.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
-        ev.stopPropagation();
-        this.store.collect(kind);
-      });
-      return b;
-    };
-    this.bubbles = { coins: bubble("ui-coins", "coins"), mats: bubble("ui-mats", "mats") };
     this.rebuildNetworks();
   }
 
@@ -232,7 +203,6 @@ export class WorldScene extends Phaser.Scene {
         flag.setOrigin(0, 0);
         this.tweens.add({ targets: flag, scaleX: { from: 1 / RES, to: 0.8 / RES }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
         part.extras.push(flag);
-        this.thLabel.setPosition(pos.x, pos.y + 22);
       }
       parts.push(part);
       if (anim === "add" && k === c.s.length - 1) this.dropIn(part, x, y);
@@ -384,10 +354,14 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** Smoothly moves the camera to look at a column. */
-  focus(i: number) {
+  focus(i: number, zoom?: number) {
     const { x, y } = xy(i);
     const p = P(x, y);
-    this.cameras.main.pan(p.x, p.y - 30, this.deps.reduced ? 0 : 600, "Sine.easeInOut");
+    this.cameras.main.pan(p.x, p.y - 30, this.deps.reduced ? 0 : 900, "Sine.easeInOut");
+    if (zoom) {
+      this.zoomTarget = zoom;
+      this.zoomAnchor = null;
+    }
   }
 
   // ------------------------------------------------------------------ input
@@ -410,17 +384,14 @@ export class WorldScene extends Phaser.Scene {
         this.keys.add(k);
         if (k.startsWith("arrow")) e.preventDefault();
       }
-      if (k === " ") this.spaceDown = true;
       if (k === "+" || k === "=") this.zoomTarget = Math.min(2.4, this.zoomTarget * 1.2);
       if (k === "-" || k === "_") this.zoomTarget = Math.max(0.4, this.zoomTarget / 1.2);
     };
     const up = (e: KeyboardEvent) => {
       this.keys.delete(e.key.toLowerCase());
-      if (e.key === " ") this.spaceDown = false;
     };
     const blur = () => {
       this.keys.clear();
-      this.spaceDown = false;
     };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -435,29 +406,17 @@ export class WorldScene extends Phaser.Scene {
   private pointers() {
     return [this.input.pointer1, this.input.pointer2].filter((p) => p && p.isDown);
   }
-
   private onDown(p: Phaser.Input.Pointer) {
     const ps = this.pointers();
     if (ps.length >= 2) {
-      // Two fingers: pinch to zoom, drag to pan; cancel any painting.
+      // Two fingers: pinch to zoom and drag to pan.
       const [a, b] = ps;
       this.drag = null;
       this.pinch = { d: Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y), z: this.zoomTarget, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
       return;
     }
     this.vel = { x: 0, y: 0 };
-    const tool = this.store.tool;
-    const pan = tool.kind === "none" || p.rightButtonDown() || p.middleButtonDown() || this.spaceDown;
-    this.drag = { id: p.id, x: p.x, y: p.y, moved: false, pan, painted: new Set() };
-    this.updateHover(p);
-    if (!pan && this.hovered >= 0) this.paint(this.hovered, false);
-  }
-
-  private paint(i: number, quiet: boolean) {
-    if (!this.drag || this.drag.painted.has(i)) return;
-    this.drag.painted.add(i);
-    if (this.store.tool.kind === "build") this.store.placeAt(i, quiet);
-    else if (this.store.tool.kind === "remove") this.store.removeAt(i, quiet);
+    this.drag = { id: p.id, x: p.x, y: p.y };
   }
 
   private onMove(p: Phaser.Input.Pointer) {
@@ -469,7 +428,7 @@ export class WorldScene extends Phaser.Scene {
         const d = Phaser.Math.Distance.Between(a.x, a.y, b.x, b.y);
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
-        this.zoomTarget = Phaser.Math.Clamp(this.pinch.z * (d / Math.max(1, this.pinch.d)), 0.4, 2.4);
+        this.zoomTarget = Phaser.Math.Clamp(this.pinch.z * (d / Math.max(1, this.pinch.d)), 0.5, 2.2);
         this.zoomAnchor = { sx: mx, sy: my };
         cam.scrollX -= (mx - this.pinch.mx) / cam.zoom;
         cam.scrollY -= (my - this.pinch.my) / cam.zoom;
@@ -479,26 +438,15 @@ export class WorldScene extends Phaser.Scene {
       return;
     }
     const d = this.drag;
-    if (d && p.id === d.id && p.isDown) {
-      const dx = p.x - d.x;
-      const dy = p.y - d.y;
-      if (!d.moved && Math.hypot(dx, dy) > 6 * this.res) d.moved = true;
-      if (d.pan && d.moved) {
-        cam.scrollX -= dx / cam.zoom;
-        cam.scrollY -= dy / cam.zoom;
-        this.vel = { x: (dx / cam.zoom) * 0.9 + this.vel.x * 0.1, y: (dy / cam.zoom) * 0.9 + this.vel.y * 0.1 };
-        d.x = p.x;
-        d.y = p.y;
-        this.clampCamera();
-        return;
-      }
-      if (!d.pan) {
-        this.updateHover(p);
-        if (this.hovered >= 0) this.paint(this.hovered, true);
-        return;
-      }
-    }
-    this.updateHover(p);
+    if (!d || p.id !== d.id || !p.isDown) return;
+    const dx = p.x - d.x;
+    const dy = p.y - d.y;
+    cam.scrollX -= dx / cam.zoom;
+    cam.scrollY -= dy / cam.zoom;
+    this.vel = { x: (dx / cam.zoom) * 0.9 + this.vel.x * 0.1, y: (dy / cam.zoom) * 0.9 + this.vel.y * 0.1 };
+    d.x = p.x;
+    d.y = p.y;
+    this.clampCamera();
   }
 
   private onUp(p: Phaser.Input.Pointer) {
@@ -506,111 +454,7 @@ export class WorldScene extends Phaser.Scene {
       if (this.pointers().length < 2) this.pinch = null;
       return;
     }
-    const d = this.drag;
-    this.drag = null;
-    if (!d || p.id !== d.id) return;
-    if (d.pan && !d.moved && this.store.tool.kind === "none" && !p.rightButtonReleased()) {
-      // A tap: select what's there.
-      this.updateHover(p);
-      const i = this.hovered;
-      const c = i >= 0 ? this.store.town.cols[i] : null;
-      this.store.select(c && (c.s.length || c.g !== "grass") ? i : null);
-    }
-    if (!d.pan) this.vel = { x: 0, y: 0 };
-  }
-
-  /** Which column is under the pointer, taking building heights into account. */
-  pick(wx: number, wy: number): { i: number; level: number } {
-    let best = -1;
-    let bestKey = -Infinity;
-    let bestLevel = 0;
-    const t = this.store.town;
-    const tool = this.store.tool;
-    // Ground pieces go where the ground is; when building, trees and flowers don't block the view.
-    const groundOnly = tool.kind === "build" && piece(tool.id).kind === "ground";
-    const softNature = tool.kind === "build";
-    for (let h = 0.1; !groundOnly && h <= MAX_LEVEL + 3; h += 0.2) {
-      const sy = wy + h * BH;
-      const gx = (sy / 16 + wx / 32) / 2;
-      const gy = (sy / 16 - wx / 32) / 2;
-      const x = Math.floor(gx + 0.5);
-      const y = Math.floor(gy + 0.5);
-      if (!inside(x, y)) continue;
-      const i = idx(x, y);
-      const tp = top(t.cols[i]);
-      if (softNature && tp?.kind === "nature") continue;
-      const vh = this.visualHeight(t.cols[i]);
-      if (vh >= h) {
-        const key = (x + y) * 100 + h;
-        if (key > bestKey) {
-          bestKey = key;
-          best = i;
-          bestLevel = t.cols[i].s.length;
-        }
-      }
-    }
-    if (best < 0) {
-      const gx = (wy / 16 + wx / 32) / 2;
-      const gy = (wy / 16 - wx / 32) / 2;
-      const x = Math.floor(gx + 0.5);
-      const y = Math.floor(gy + 0.5);
-      if (inside(x, y)) {
-        best = idx(x, y);
-        bestLevel = t.cols[best].s.length;
-      }
-    }
-    return { i: best, level: bestLevel };
-  }
-
-  private visualHeight(c: Column) {
-    let h = 0;
-    for (const id of c.s) h += piece(id).kind === "block" ? 1 : (this.art.vh.get(id) ?? 1);
-    return h;
-  }
-
-  private updateHover(p: Phaser.Input.Pointer) {
-    const w = this.cameras.main.getWorldPoint(p.x, p.y);
-    const hit = this.pick(w.x, w.y);
-    this.hovered = hit.i;
-    this.hoverLevel = hit.level;
-    this.needHover = true;
-  }
-
-  private drawHover() {
-    const i = this.hovered;
-    const tool = this.store.tool;
-    if (i < 0 || this.pinch) {
-      this.ring.setVisible(false);
-      this.ghost.setVisible(false);
-      return;
-    }
-    const { x, y } = xy(i);
-    const g = P(x, y);
-    this.ring.setPosition(g.x, g.y).setVisible(true);
-    const now = this.store.now();
-    if (tool.kind === "build") {
-      const pd = piece(tool.id);
-      const ok = canPlace(this.store.town, i, tool.id, now).ok;
-      const key = pd.kind === "ground" ? (pd.id === "road" ? "g-road-0" : groundKey(pd.id, x, y)) : texFor(pd);
-      const info = this.art.get(key);
-      const level = pd.kind === "ground" ? 0 : this.store.town.cols[i].s.length;
-      const pos = this.levelY(x, y, level);
-      this.ghost
-        .setTexture(key)
-        .setOrigin(info.ox, info.oy)
-        .setPosition(pos.x, pos.y - (ok ? 3 + Math.sin(this.time.now / 180) * 2 : 0))
-        .setDepth(pd.kind === "ground" ? OVERLAY_DEPTH + 3 : colDepth(x, y) + level + 0.9)
-        .setTint(ok ? 0xc8ffc8 : 0xff9a8a)
-        .setAlpha(ok ? 0.75 : 0.6)
-        .setVisible(true);
-      this.ring.setTint(ok ? 0x9cff9c : 0xff7a6a);
-    } else if (tool.kind === "remove") {
-      this.ghost.setVisible(false);
-      this.ring.setTint(removeInfo(this.store.town, i, now).ok ? 0xff7a6a : 0x999999);
-    } else {
-      this.ghost.setVisible(false);
-      this.ring.setTint(0xffffff);
-    }
+    if (this.drag && p.id === this.drag.id) this.drag = null;
   }
 
   // ------------------------------------------------------------------ events
@@ -629,52 +473,22 @@ export class WorldScene extends Phaser.Scene {
           ])
             if (inside(x + dx, y + dy)) this.refreshGround(idx(x + dx, y + dy));
           const g = this.ground[i];
-          if (!this.deps.reduced) this.tweens.add({ targets: g, scale: { from: 0.7 / RES, to: 1 / RES }, duration: 240, ease: "Back.easeOut" });
+          g.setTint(this.tintNow);
+          if (!this.deps.reduced) this.tweens.add({ targets: g, scale: { from: 0.6 / RES, to: 1 / RES }, duration: 260, ease: "Back.easeOut" });
+          this.sparkle(g.x, g.y - 6, 3, 0xbff5c8);
           this.rebuildNetworks();
-          this.syncColumn(i, null);
-        } else this.syncColumn(i, change);
-        this.needHover = true;
-      }),
-      bus.on("built", ({ i }) => {
-        this.syncBuilding(i);
-        const parts = this.cols[i];
-        const tp = parts[parts.length - 1];
-        if (tp) {
-          tp.img.setAlpha(1);
-          const s = 1 / RES;
-          if (!this.deps.reduced) this.tweens.add({ targets: tp.img, scaleY: { from: s * 0.7, to: s }, duration: 420, ease: "Back.easeOut" });
-          this.sparkle(tp.img.x, tp.img.y - 30, 12);
+        } else {
+          this.syncColumn(i, change);
+          if (change === "add") {
+            const parts = this.cols[i];
+            const tp = parts[parts.length - 1];
+            if (tp) this.sparkle(tp.img.x, tp.img.y - 24, 5, 0xbff5c8);
+          }
         }
       }),
-      bus.on("townhall", () => {
-        const i = idx(TOWN_HALL.x, TOWN_HALL.y);
-        this.syncBuilding(i);
-        const p = P(TOWN_HALL.x, TOWN_HALL.y);
-        this.sparkle(p.x, p.y - 60, 30);
-        this.sparkle(p.x, p.y - 60, 20, 0x9cf0b0);
-        if (!this.deps.reduced) this.cameras.main.shake(200, 0.002);
-      }),
-      bus.on("moveIn", ({ n }) => this.moveIn(n)),
-      bus.on("fail", ({ i }) => {
-        const { x, y } = xy(i);
-        const g = P(x, y);
-        this.ring.setPosition(g.x, g.y).setTint(0xff5a4a).setVisible(true);
-        if (!this.deps.reduced) this.tweens.add({ targets: this.ring, x: g.x + 4, duration: 50, yoyo: true, repeat: 3 });
-      }),
-      bus.on("collect", ({ i, kind }) => {
-        const b = kind === "coins" ? this.bubbles.coins : this.bubbles.mats;
-        this.tweens.add({ targets: b, scale: { from: 1.3 / RES, to: 0 }, alpha: 0, duration: 260, ease: "Back.easeIn", onComplete: () => b.setVisible(false).setAlpha(1).setScale(1 / RES) });
-        const { x, y } = xy(i);
-        const p = P(x, y);
-        this.sparkle(p.x, p.y - 70, 8, kind === "coins" ? 0xffd25a : 0x5fe0cf);
-        // Tell the HUD where the coins fly from (CSS pixels).
-        const cam = this.cameras.main;
-        const sx = (p.x - 0 - cam.worldView.x) * cam.zoom;
-        const sy = (p.y - 70 - cam.worldView.y) * cam.zoom;
-        window.dispatchEvent(new CustomEvent("greenhold:fly", { detail: { kind, x: sx / this.res, y: sy / this.res } }));
-      }),
-      bus.on("focus", ({ i }) => this.focus(i)),
-      bus.on("reset", () => this.scene.restart(this.deps)),
+      bus.on("focus", ({ i, zoom }) => this.focus(i, zoom)),
+      bus.on("snapshot", ({ kind }) => this.snap(kind)),
+      bus.on("restart", () => this.scene.restart(this.deps)),
     );
     this.events.once("shutdown", () => {
       this.ready = false;
@@ -683,12 +497,31 @@ export class WorldScene extends Phaser.Scene {
       this.agents = [];
       this.builds.clear();
       this.smog = [];
-      this.badges = [];
       this.butterflies = [];
       this.ground = [];
       this.cols = [];
     });
   }
+
+  /** Pictures the town for the before/after comparison, always from the opening viewpoint. */
+  private snap(kind: "before" | "after") {
+    const cam = this.cameras.main;
+    if (kind === "before" || !this.pose) this.pose = { x: cam.midPoint.x, y: cam.midPoint.y, zoom: cam.zoom };
+    else {
+      this.zoomTarget = this.pose.zoom / this.res;
+      this.zoomAnchor = null;
+      cam.setZoom(this.pose.zoom);
+      cam.centerOn(this.pose.x, this.pose.y);
+    }
+    const settle = kind === "after" ? 900 : 0;
+    this.time.delayedCall(settle, () =>
+      this.game.renderer.snapshot((img) => {
+        const src = (img as HTMLImageElement).src;
+        if (src) this.store.setSnapshot(kind, src);
+      }),
+    );
+  }
+
 
   // ------------------------------------------------------------------ agents
   private rebuildNetworks() {
@@ -738,34 +571,6 @@ export class WorldScene extends Phaser.Scene {
     const a: Agent = { img, from: at, to: at, t: 1, speed: kind === "walker" ? 0.6 + Math.random() * 0.3 : kind === "bike" ? 1.4 : kind === "bus" ? 1.2 : 1.6 + Math.random() * 0.6, kind, puff: Math.random() * 1000 };
     this.agents.push(a);
     return a;
-  }
-
-  private moveIn(n: number) {
-    const homes = this.store.sim.stats.homes;
-    const starts = this.walkTiles.length ? this.walkTiles : this.roads;
-    if (!homes.length || !starts.length) return;
-    for (let k = 0; k < Math.min(n, 4); k++) {
-      const h = homes[Math.floor(Math.random() * homes.length)];
-      const hp = xy(h);
-      // Start from the nearest path or road.
-      let best = starts[0];
-      let bd = Infinity;
-      for (const s of starts) {
-        const p = xy(s);
-        const d = Math.abs(p.x - hp.x) + Math.abs(p.y - hp.y);
-        if (d < bd) {
-          bd = d;
-          best = s;
-        }
-      }
-      const a = this.spawn("walker", best);
-      const sp = xy(best);
-      a.sx = sp.x + (Math.random() - 0.5) * 0.4;
-      a.sy = sp.y + (Math.random() - 0.5) * 0.4;
-      a.target = hp;
-      a.t = 0;
-      a.speed = 1 / Math.max(1, Math.hypot(hp.x - sp.x, hp.y - sp.y));
-    }
   }
 
   private updateAgents(dt: number) {
@@ -927,7 +732,6 @@ export class WorldScene extends Phaser.Scene {
   private syncSlow(first = false) {
     const t = this.store.town;
     const stats = this.store.sim.stats;
-    const now = this.store.now();
     this.e = env(t.clock);
     // Day and night: tint the world.
     const tint = dayTint(this.e);
@@ -954,95 +758,11 @@ export class WorldScene extends Phaser.Scene {
         [1, 1],
       ])
         if (inside(x + dx, y + dy)) sum += this.store.sim.air[idx(x + dx, y + dy)];
-      s.target = Phaser.Math.Clamp((sum / 4 - 3) / 40, 0, 1) * 0.66;
+      s.target = Phaser.Math.Clamp((sum / 4 - 3) / 34, 0, 1) * 0.8;
+      if (first) s.img.setAlpha(s.target).setVisible(s.target > 0.01);
     }
-    // Collection bubbles.
-    const th = P(TOWN_HALL.x, TOWN_HALL.y);
-    const coinsVis = t.chest >= 1;
-    if (coinsVis && !this.bubbles.coins.visible) {
-      this.bubbles.coins.setPosition(th.x, th.y - 100).setVisible(true);
-      this.tweens.add({ targets: this.bubbles.coins, y: th.y - 106, duration: 900, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
-    } else if (!coinsVis) this.bubbles.coins.setVisible(false);
-    const rc = t.cols.findIndex((c) => c.s.includes("recycling") && !building(c, now));
-    const matsVis = rc >= 0 && t.matChest >= 1;
-    if (matsVis && !this.bubbles.mats.visible) {
-      const { x, y } = xy(rc);
-      const p = P(x, y);
-      this.bubbles.mats.setPosition(p.x, p.y - 56).setVisible(true);
-      this.tweens.add({ targets: this.bubbles.mats, y: p.y - 62, duration: 900, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
-    } else if (!matsVis) this.bubbles.mats.setVisible(false);
-    // Problem badges over buildings that can't be lived in yet.
-    const probs = [...stats.noRoof.map((i) => ({ i, k: "ui-noroof" })), ...stats.noAccess.map((i) => ({ i, k: "ui-noroad" }))].slice(0, 24);
-    while (this.badges.length < probs.length) {
-      const b = this.put("ui-noroof", 0, 0, UI_DEPTH).setScale(0.8 / RES);
-      if (!this.deps.reduced) this.tweens.add({ targets: b, scale: { from: 0.8 / RES, to: 0.9 / RES }, duration: 700, yoyo: true, repeat: -1, ease: "Sine.easeInOut" });
-      this.badges.push(b);
-    }
-    this.badges.forEach((b, k) => {
-      const pr = probs[k];
-      if (!pr) return b.setVisible(false);
-      const { x, y } = xy(pr.i);
-      const pos = this.levelY(x, y, t.cols[pr.i].s.length);
-      b.setTexture(pr.k).setPosition(pos.x, pos.y - 18).setVisible(true);
-    });
-    // Town Hall level.
-    this.thLabel.setText(`Lv ${t.th}`);
-    // Construction that started or finished elsewhere (e.g. while away).
-    t.cols.forEach((c, i) => {
-      if (building(c, now) !== this.builds.has(i) && i !== idx(TOWN_HALL.x, TOWN_HALL.y)) this.syncBuilding(i);
-    });
-    this.syncBuilding(idx(TOWN_HALL.x, TOWN_HALL.y));
-    this.drawAir();
+    if (first) this.haze.setAlpha(Phaser.Math.Clamp((this.store.air - 3) / 36, 0, 1) * 0.42);
     this.butterfliesUpdate();
-  }
-
-  private drawAir() {
-    const g = this.airGfx;
-    g.clear();
-    if (this.store.overlay !== "air") return;
-    const air = this.store.sim.air;
-    for (let i = 0; i < N * N; i++) {
-      const v = air[i];
-      const { x, y } = xy(i);
-      const c = v < 10 ? 0x4cc46a : v < 20 ? 0xb8d34a : v < 35 ? 0xf2c230 : v < 55 ? 0xf08a3c : 0xd9443a;
-      g.fillStyle(c, 0.5);
-      const a = P(x - 0.5, y - 0.5);
-      const b = P(x + 0.5, y - 0.5);
-      const cc = P(x + 0.5, y + 0.5);
-      const d = P(x - 0.5, y + 0.5);
-      g.fillPoints([new Phaser.Math.Vector2(a.x, a.y), new Phaser.Math.Vector2(b.x, b.y), new Phaser.Math.Vector2(cc.x, cc.y), new Phaser.Math.Vector2(d.x, d.y)], true);
-    }
-  }
-
-  private drawBars() {
-    const g = this.bars;
-    g.clear();
-    const now = this.store.now();
-    const t = this.store.town;
-    const draw = (i: number, start: number, end: number, levels: number) => {
-      const { x, y } = xy(i);
-      const pos = this.levelY(x, y, levels);
-      const k = Phaser.Math.Clamp(1 - (end - now) / Math.max(1, end - start), 0, 1);
-      g.fillStyle(0x1d2b22, 0.75);
-      g.fillRoundedRect(pos.x - 22, pos.y - 30, 44, 7, 3);
-      g.fillStyle(0x7fdc6a, 1);
-      g.fillRoundedRect(pos.x - 21, pos.y - 29, 42 * k, 5, 2.5);
-    };
-    for (const i of this.builds.keys()) {
-      const c = t.cols[i];
-      if (i === idx(TOWN_HALL.x, TOWN_HALL.y) && t.thUntil) {
-        const lvl = t.th + 1;
-        const dur = [0, 0, 15, 30, 45, 60][lvl] * 1000;
-        draw(i, t.thUntil - dur, t.thUntil, 3);
-      } else if (c.until) {
-        const tp = top(c)!;
-        const pos = this.cols[i][this.cols[i].length - 1];
-        // The silhouette rises as the work progresses.
-        const k = Phaser.Math.Clamp(1 - (c.until - now) / (tp.time * 1000), 0, 1);
-        if (pos) pos.img.setScale(1 / RES, (0.25 + 0.75 * k) / RES);
-        draw(i, c.until - tp.time * 1000, c.until, c.s.length + 1);
-      }
-    }
   }
 
   // ------------------------------------------------------------------ frame
@@ -1090,7 +810,6 @@ export class WorldScene extends Phaser.Scene {
       cam.scrollX += before.x - after.x;
       cam.scrollY += before.y - after.y;
       this.clampCamera();
-      this.needHover = true;
     } else this.zoomAnchor = null;
 
     // Wind turbines turn with the wind (not while still being built).
@@ -1124,29 +843,18 @@ export class WorldScene extends Phaser.Scene {
       if (!reduced) this.emitSmoke();
     }
 
-    this.updateAgents(dt);
-    this.drawBars();
+    // Haze follows the view and thickens with the air reading.
+    const view = cam.worldView;
+    const hazeTarget = Phaser.Math.Clamp((this.store.air - 3) / 36, 0, 1) * 0.42;
+    this.haze
+      .setPosition(view.x - 20, view.y - 20)
+      .setSize(view.width + 40, view.height + 40)
+      .setAlpha(this.haze.alpha + (hazeTarget - this.haze.alpha) * Math.min(1, dt * 2));
 
-    if (this.store.rev !== this.rev) {
-      this.rev = this.store.rev;
-      this.needHover = true;
-    }
+    this.updateAgents(dt);
     if (time - this.lastSlow > 500) {
       this.lastSlow = time;
       this.syncSlow();
-    }
-
-    // Selected column.
-    const sel = this.store.selected;
-    if (sel !== null && sel >= 0) {
-      const { x, y } = xy(sel);
-      const p = P(x, y);
-      this.selRing.setPosition(p.x, p.y).setVisible(true).setAlpha(0.7 + Math.sin(time / 200) * 0.3);
-    } else this.selRing.setVisible(false);
-
-    if (this.needHover || this.store.tool.kind === "build") {
-      this.needHover = false;
-      this.drawHover();
     }
   }
 }

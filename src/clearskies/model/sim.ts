@@ -245,7 +245,7 @@ export function analyze(t: Town, air: Float32Array, e: Env, now: number): Stats 
     if (byStop || near(h, 2, bikeLane)) coveredCap += homeCapacity(t, h);
   }
   const coveredShare = housing ? coveredCap / housing : 0;
-  const carShare = residents ? 1 - coveredShare * 0.85 : 0;
+  const carShare = residents ? 1 - coveredShare * 0.55 : 0;
   const cars = residents * carShare;
 
   // Carbon per minute.
@@ -337,7 +337,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
   const clean = new Float32Array(N * N);
   let roads = 0;
   t.cols.forEach((c) => c.g === "road" && roads++);
-  const perRoad = roads ? (stats.travel.cars * 0.07) / roads : 0;
+  const perRoad = roads ? (stats.travel.cars * 0.42) / roads : 0;
   t.cols.forEach((c, i) => {
     if (c.g === "road") src[i] += perRoad;
     if (c.g === "garden") clean[i] += piece("garden").absorb!;
@@ -372,7 +372,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
       v += (up - p * (Math.abs(wx) + Math.abs(wy))) * dt;
       v += src[i] * dt * 2.2;
       // Natural clean-up, plus plants and water taking out a share of what passes over them.
-      v -= v * (0.009 + clean[i] * 0.08) * dt;
+      v -= v * (0.009 + clean[i] * 0.25) * dt;
       // Rain washes the air.
       v -= v * e.rain * 0.05 * dt;
       // The map edge lets air out.
