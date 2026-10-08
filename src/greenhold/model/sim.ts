@@ -6,6 +6,7 @@
  */
 import { piece } from "./pieces";
 import { CHEST_CAP, N, PAVED, TH_UPGRADE, idx, inside, xy, type Town } from "./world";
+import { WORLDS } from "./worlds";
 
 export const DAY_SECONDS = 240;
 /** Air steps per tick. */
@@ -62,6 +63,8 @@ export interface Stats {
   happiness: number;
   /** Taxes per second. */
   taxRate: number;
+  /** Coins per minute from shops and cafés. */
+  income: number;
   stars: boolean[];
   starCount: number;
 }
@@ -110,6 +113,8 @@ export function analyze(t: Town, air: Float32Array): Stats {
   let clean = 0;
   let co2 = 0;
   let upkeep = 0;
+  let use = 0;
+  const earners: { i: number; income: number }[] = [];
   const stops: { i: number; r: number }[] = [];
   const niceSpots: { i: number; r: number }[] = [];
 
@@ -132,6 +137,8 @@ export function analyze(t: Town, air: Float32Array): Stats {
     }
     for (const p of pieces) {
       if (p.energy && p.energy > 0) dirty += p.energy;
+      if (p.energy && p.energy < 0) use -= p.energy;
+      if (p.income) earners.push({ i, income: p.income });
       if (p.solar) clean += p.solar;
       if (p.wind) clean += p.wind;
       if (p.co2) co2 += p.co2;
@@ -142,7 +149,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
   });
 
   const residents = Math.min(t.residents, housing);
-  const demand = housing ? (residents * insulSum) / housing : 0;
+  const demand = (housing ? (residents * insulSum) / housing : 0) + use;
   const supply = dirty + clean;
 
   // Travel: homes near a bike lane or a bus stop leave the car at home.
@@ -167,6 +174,15 @@ export function analyze(t: Town, air: Float32Array): Stats {
   happiness -= homeAir * 0.8;
   happiness = Math.max(5, Math.min(100, happiness));
 
+  // Shops and cafés earn from residents within 6 tiles (full takings at 12 or more).
+  const occupancy = housing ? residents / housing : 0;
+  let income = 0;
+  for (const e of earners) {
+    let customers = 0;
+    for (const h of homes) if (within(e.i, h, 6)) customers += homeCap.get(h)! * occupancy;
+    income += e.income * Math.min(1, customers / 12);
+  }
+
   const enough = residents >= 4;
   const cleanShare = supply > 0 ? clean / supply : 0;
   const stars = [enough && cleanShare >= 0.7 && supply >= demand, enough && homeAir < AIR_OK, enough && carShare < 0.5];
@@ -184,6 +200,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
     meanAir,
     happiness,
     taxRate: residents * 0.15 * (0.4 + happiness / 100),
+    income,
     stars,
     starCount: stars.filter(Boolean).length,
   };
@@ -205,7 +222,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
   const clean = new Float32Array(N * N);
   let roads = 0;
   t.cols.forEach((c) => c.g === "road" && roads++);
-  const perRoad = roads ? (stats.travel.cars * 0.42) / roads : 0;
+  const perRoad = roads ? (stats.travel.cars * 0.85) / roads : 0;
   t.cols.forEach((c, i) => {
     if (c.g === "road") src[i] += perRoad;
     for (const id of c.s) {
@@ -237,27 +254,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
   air.set(out);
 }
 
-/** One goal at a time, each teaching one sustainable move. */
-export interface Goal {
-  id: string;
-  name: string;
-  why: string;
-  coins: number;
-  done: (t: Town, s: Stats) => boolean;
-}
-
-export const GOALS: readonly Goal[] = [
-  { id: "collect", name: "Collect taxes at the Town Hall", why: "Tap the coin bubble above the Town Hall. Happy towns pay more.", coins: 50, done: (t) => t.counts.collected > 0 },
-  { id: "clean-power", name: "Build solar panels or a wind turbine", why: "They make energy without smoke, and cost nothing to run.", coins: 100, done: (t) => t.cols.some((c) => c.s.includes("solar") || c.s.includes("wind") || c.s.includes("solarroof")) },
-  { id: "no-coal", name: "Remove the coal plant", why: "Once clean power covers your homes, take away the smoke at its source. Watch the air clear.", coins: 200, done: (t) => !t.cols.some((c) => c.s.includes("coal")) },
-  { id: "trees", name: "Plant 6 trees", why: "Trees clean the air near homes and make people happier.", coins: 80, done: (t) => t.counts.trees >= 6 },
-  { id: "home", name: "Build a new home", why: "Stack blocks, add a roof and keep a path within 2 tiles. Timber stores carbon; concrete releases it.", coins: 100, done: (t, s) => s.housing >= 28 },
-  { id: "bikes", name: "Lay a bike lane next to homes", why: "People within 2 tiles of a bike lane cycle instead of driving.", coins: 100, done: (t, s) => s.travel.covered > 0 },
-  { id: "town", name: "Upgrade the Town Hall", why: "Tap the Town Hall. Upgrades unlock taller buildings, green roofs and buses.", coins: 200, done: (t) => t.th >= 2 },
-  { id: "stars", name: "Earn all 3 eco stars", why: "Clean power, clean air and green travel, all at once.", coins: 500, done: (t, s) => s.starCount === 3 },
-];
-
-export type SimEvent = { type: "goal"; id: string } | { type: "moveIn"; n: number };
+export type SimEvent = { type: "goal"; id: string } | { type: "world" } | { type: "moveIn"; n: number };
 
 /** Advances the town by `dt` seconds of play. */
 export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
@@ -274,7 +271,7 @@ export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
   const after = Math.floor(t.residents);
   if (after > before) events.push({ type: "moveIn", n: after - before });
 
-  t.chest = Math.min(CHEST_CAP[t.th], t.chest + s.taxRate * dt);
+  t.chest = Math.min(CHEST_CAP[t.th], t.chest + (s.taxRate + s.income / 60) * dt);
   t.coins = Math.max(0, t.coins - (s.upkeep / 60) * dt);
   t.carbon += (s.co2 / 60) * dt;
 
@@ -282,11 +279,17 @@ export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
   const e = env(t.clock);
   for (let k = 0; k < AIR_SPEED; k++) stepAir(t, sim.air, e, s, dt);
 
-  const g = GOALS[t.goal];
+  // Achievements come one at a time; the last one completes the world.
+  const list = WORLDS[t.world]?.achievements ?? [];
+  const g = list[t.goal];
   if (g && g.done(t, s)) {
     t.goal++;
     t.coins += g.coins;
     events.push({ type: "goal", id: g.id });
+    if (t.goal >= list.length && !t.complete) {
+      t.complete = true;
+      events.push({ type: "world" });
+    }
   }
   return events;
 }
@@ -296,7 +299,7 @@ export function catchUp(t: Town, sim: Sim, now: number) {
   const away = Math.min(8 * 3600, Math.max(0, (now - t.lastTs) / 1000));
   if (away < 5) return 0;
   const s = analyze(t, sim.air);
-  t.chest = Math.min(CHEST_CAP[t.th], t.chest + s.taxRate * away);
+  t.chest = Math.min(CHEST_CAP[t.th], t.chest + (s.taxRate + s.income / 60) * away);
   t.coins = Math.max(0, t.coins - (s.upkeep / 60) * away);
   return away;
 }

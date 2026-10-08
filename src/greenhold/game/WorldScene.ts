@@ -4,6 +4,7 @@ import { env, windAngle, type Env } from "../model/sim";
 import { N, PAVED, TOWN_HALL, canPlace, idx, inside, removeInfo, top, xy, type Column } from "../model/world";
 import type { GameStore } from "../state/store";
 import { Art, BH, P, RES } from "./art";
+import { CAR_TYPES, LOOKS, type Dir } from "./artAgents";
 
 export interface SceneDeps {
   store: GameStore;
@@ -34,11 +35,20 @@ interface Part {
 
 interface Agent {
   img: Phaser.GameObjects.Image;
+  /** Headlight glow (cars at night). */
+  light?: Phaser.GameObjects.Image;
   from: number;
   to: number;
   t: number;
   speed: number;
   kind: "car" | "bus" | "walker" | "bike";
+  /** Car type, or which person it is. */
+  look: string | number;
+  /** Walking animation. */
+  step: number;
+  frame: 0 | 1;
+  /** Which side of the street a pedestrian keeps to (-1 or 1). */
+  side: number;
   /** Walkers moving into a home walk straight there, then vanish. */
   target?: { x: number; y: number };
   sx?: number;
@@ -51,8 +61,12 @@ const OVERLAY_DEPTH = -50000;
 const SMOG_DEPTH = 900000;
 const UI_DEPTH = 950000;
 const MAX_LEVEL = 12;
-const CAR_COLORS = [0xe8e8e8, 0xd9534f, 0x3a6fb0, 0x2b2f36, 0xf0c040, 0x5aa36a, 0x9aa3ab];
-const SHIRTS = [0xe05a47, 0x3f7fd6, 0xf2c230, 0x4cae4c, 0x8e6fd8, 0xffffff, 0xf08a3c];
+/** Places people like to walk to: walkers gather near them. */
+const DESTINATIONS = ["cafe", "shop", "school", "market", "park", "playground", "fountain", "library", "clinic", "shopfront", "bench"];
+const ADULTS = LOOKS.map((l, i) => (l.kid ? -1 : i)).filter((i) => i >= 0);
+const KIDS = LOOKS.map((l, i) => (l.kid ? i : -1)).filter((i) => i >= 0);
+const pick = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
+const dirOf = (dx: number, dy: number): Dir => (dx > 0 ? "xp" : dx < 0 ? "xn" : dy > 0 ? "yp" : "yn");
 
 const colDepth = (x: number, y: number) => (x + y) * 40 + 1000;
 const groundKey = (g: string, x: number, y: number) => (g === "road" ? "g-road-0" : g === "grass" ? `g-grass-${(x * 7 + y * 13) % 3}` : g === "water" ? `g-water-${(x + y) % 3}` : `g-${g}`);
@@ -76,6 +90,7 @@ export class WorldScene extends Phaser.Scene {
   private roads: number[] = [];
   private walkTiles: number[] = [];
   private bikeTiles: number[] = [];
+  private busyTiles: number[] = [];
   private smog: { img: Phaser.GameObjects.Image; target: number; i: number }[] = [];
   private coinBubble!: Phaser.GameObjects.Image;
   private badges: Phaser.GameObjects.Image[] = [];
@@ -217,7 +232,7 @@ export class WorldScene extends Phaser.Scene {
       const pos = this.levelY(x, y, k);
       const img = this.put(texFor(pd), pos.x, pos.y, colDepth(x, y) + k);
       const part: Part = { id: pd.id, img, extras: [] };
-      if (pd.kind === "block") part.glow = this.put(`b-${pd.id}-glow`, pos.x, pos.y, colDepth(x, y) + k + 0.3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+      if (this.art.info.has(`${texFor(pd)}-glow`)) part.glow = this.put(`${texFor(pd)}-glow`, pos.x, pos.y, colDepth(x, y) + k + 0.3).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
       if (pd.id === "wind") {
         const rotor = this.put("m-wind-rotor", pos.x + 1, pos.y - 114, colDepth(x, y) + k + 0.5);
         rotor.setOrigin(0.5, 0.5);
@@ -656,17 +671,33 @@ export class WorldScene extends Phaser.Scene {
     this.roads = [];
     this.walkTiles = [];
     this.bikeTiles = [];
+    this.busyTiles = [];
+    const spots: number[] = [];
     t.cols.forEach((c, i) => {
       if (c.g === "road") this.roads.push(i);
-      if (c.g === "path" || c.g === "bike") this.walkTiles.push(i);
+      if (PAVED.includes(c.g)) this.walkTiles.push(i);
       if (c.g === "bike") this.bikeTiles.push(i);
+      if (c.s.some((id) => DESTINATIONS.includes(id)) || c.g === "plaza") spots.push(i);
+    });
+    // Pavements within 3 tiles of a café, school, park or plaza are where crowds gather.
+    this.busyTiles = this.walkTiles.filter((w) => {
+      const a = xy(w);
+      return spots.some((sp) => {
+        const b = xy(sp);
+        return Math.abs(a.x - b.x) <= 3 && Math.abs(a.y - b.y) <= 3;
+      });
     });
     // Vehicles on tiles that are no longer roads leave.
     this.agents = this.agents.filter((a) => {
       const ok = a.target || this.tileOk(a, a.from) || this.tileOk(a, a.to);
-      if (!ok) a.img.destroy();
+      if (!ok) this.dropAgent(a);
       return ok;
     });
+  }
+
+  private dropAgent(a: Agent) {
+    a.img.destroy();
+    a.light?.destroy();
   }
 
   private tileOk(a: Agent, i: number) {
@@ -690,24 +721,42 @@ export class WorldScene extends Phaser.Scene {
     return out;
   }
 
-  private spawn(kind: Agent["kind"], at: number) {
-    const key = kind === "car" ? "v-car-x" : kind === "bus" ? "v-bus-x" : kind === "bike" ? "v-bike" : "v-person";
-    const img = this.put(key, 0, 0, 0);
-    if (kind === "car") img.setTint(CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]);
-    if (kind === "walker" || kind === "bike") img.setTint(SHIRTS[Math.floor(Math.random() * SHIRTS.length)]);
-    const a: Agent = { img, from: at, to: at, t: 1, speed: kind === "walker" ? 0.6 + Math.random() * 0.3 : kind === "bike" ? 1.4 : kind === "bus" ? 1.2 : 1.6 + Math.random() * 0.6, kind, puff: Math.random() * 1000 };
+  private textureFor(a: Agent, dx: number, dy: number) {
+    if (a.kind === "car") return `v-${a.look}-${dirOf(dx, dy)}`;
+    if (a.kind === "bus") return `v-bus-${dirOf(dx, dy)}`;
+    if (a.kind === "bike") return `c-${a.look}-${a.frame}`;
+    return `p-${a.look}-${a.frame}`;
+  }
+
+  private spawn(kind: Agent["kind"], at: number, kid = false) {
+    const look: string | number = kind === "car" ? pick(CAR_TYPES) : kind === "bus" ? "bus" : kid ? pick(KIDS) : pick(ADULTS);
+    const a: Agent = {
+      img: null as unknown as Phaser.GameObjects.Image,
+      from: at,
+      to: at,
+      t: 1,
+      speed: kind === "walker" ? (kid ? 0.75 : 0.5 + Math.random() * 0.3) : kind === "bike" ? 1.3 : kind === "bus" ? 1.1 : 1.5 + Math.random() * 0.6,
+      kind,
+      look,
+      step: Math.random(),
+      frame: 0,
+      side: Math.random() < 0.5 ? -1 : 1,
+      puff: Math.random() * 1000,
+    };
+    a.img = this.put(this.textureFor(a, 1, 0), 0, 0, 0);
+    if (kind === "car" || kind === "bus") a.light = this.add.image(0, 0, "fx-beam").setScale(1 / RES).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
     this.agents.push(a);
     return a;
   }
 
   private moveIn(n: number) {
     const homes = this.store.sim.stats.homes;
-    const starts = this.walkTiles.length ? this.walkTiles : this.roads;
+    const starts = this.walkTiles;
     if (!homes.length || !starts.length) return;
     for (let k = 0; k < Math.min(n, 4); k++) {
       const h = homes[Math.floor(Math.random() * homes.length)];
       const hp = xy(h);
-      // Start from the nearest path or road.
+      // Start from the nearest pavement.
       let best = starts[0];
       let bd = Infinity;
       for (const s of starts) {
@@ -730,48 +779,58 @@ export class WorldScene extends Phaser.Scene {
 
   private updateAgents(dt: number) {
     const stats = this.store.sim.stats;
+    const t = this.store.town;
+    const day = 0.35 + 0.65 * (1 - this.e.night);
+    const hasSchool = t.cols.some((c) => c.s.includes("school"));
     // How many of each to show.
     const want = {
-      car: this.roads.length >= 2 ? Math.min(36, Math.round(stats.travel.cars / 2.5)) : 0,
-      bus: this.roads.length >= 2 && this.store.town.cols.some((c) => c.s.includes("bus") || c.s.includes("tram")) ? Math.min(3, 1 + Math.floor(this.store.town.residents / 40)) : 0,
-      walker: this.walkTiles.length ? Math.min(30, Math.round(this.store.town.residents / 3)) : 0,
-      bike: this.bikeTiles.length >= 2 ? Math.min(14, Math.round((this.store.town.residents * stats.travel.covered) / 5)) : 0,
+      car: this.roads.length >= 2 ? Math.min(40, Math.round(stats.travel.cars / 2.5)) : 0,
+      bus: this.roads.length >= 2 && t.cols.some((c) => c.s.includes("bus")) ? Math.min(4, 1 + Math.floor(t.residents / 40)) : 0,
+      walker: this.walkTiles.length ? Math.round(Math.min(70, 4 + t.residents / 2) * day) : 0,
+      bike: this.bikeTiles.length >= 2 ? Math.min(18, Math.round((t.residents * stats.travel.covered) / 4)) : 0,
     };
     const have = { car: 0, bus: 0, walker: 0, bike: 0 };
     for (const a of this.agents) if (!a.target) have[a.kind]++;
     (Object.keys(want) as Agent["kind"][]).forEach((k) => {
-      const pool = k === "car" || k === "bus" ? this.roads : k === "bike" ? this.bikeTiles : this.walkTiles;
-      if (have[k] < want[k] && pool.length) this.spawn(k, pool[Math.floor(Math.random() * pool.length)]);
+      let pool = k === "car" || k === "bus" ? this.roads : k === "bike" ? this.bikeTiles : this.walkTiles;
+      // Half of the people on foot start near cafés, schools, parks and plazas.
+      if (k === "walker" && this.busyTiles.length && Math.random() < 0.5) pool = this.busyTiles;
+      if (have[k] < want[k] && pool.length) this.spawn(k, pick(pool), k === "walker" && hasSchool && Math.random() < 0.25);
       if (have[k] > want[k]) {
         const a = this.agents.find((x) => x.kind === k && !x.target);
         if (a) {
-          a.img.destroy();
+          this.dropAgent(a);
           this.agents.splice(this.agents.indexOf(a), 1);
         }
       }
     });
     const tint = this.tintNow;
+    const night = this.e.night;
     for (let n = this.agents.length - 1; n >= 0; n--) {
       const a = this.agents[n];
       a.t += dt * a.speed;
       let fx: number;
       let fy: number;
+      let dx = 0;
+      let dy = 0;
       if (a.target) {
-        const t = Math.min(1, a.t);
-        fx = a.sx! + (a.target.x - a.sx!) * t;
-        fy = a.sy! + (a.target.y - a.sy!) * t;
+        const k = Math.min(1, a.t);
+        fx = a.sx! + (a.target.x - a.sx!) * k;
+        fy = a.sy! + (a.target.y - a.sy!) * k;
+        dx = a.target.x - a.sx!;
+        dy = a.target.y - a.sy!;
         if (a.t >= 1.1) {
           this.sparkle(a.img.x, a.img.y - 10, 4, 0x9cf0b0);
-          a.img.destroy();
+          this.dropAgent(a);
           this.agents.splice(n, 1);
           continue;
         }
       } else {
         if (a.t >= 1) {
-          const ok = (g: string) => (a.kind === "car" || a.kind === "bus" ? g === "road" : a.kind === "bike" ? g === "bike" : g === "path" || g === "bike");
+          const ok = (g: string) => (a.kind === "car" || a.kind === "bus" ? g === "road" : a.kind === "bike" ? g === "bike" : PAVED.includes(g as never));
           const nb = this.neighbours(a.to, ok);
           const fwd = nb.filter((x) => x !== a.from);
-          const choice = fwd.length ? fwd[Math.floor(Math.random() * fwd.length)] : nb.length ? nb[0] : a.to;
+          const choice = fwd.length ? pick(fwd) : nb.length ? nb[0] : a.to;
           a.from = a.to;
           a.to = choice;
           a.t = a.from === a.to ? 0.5 : 0;
@@ -780,34 +839,44 @@ export class WorldScene extends Phaser.Scene {
         const to = xy(a.to);
         fx = f.x + (to.x - f.x) * a.t;
         fy = f.y + (to.y - f.y) * a.t;
-        const dx = to.x - f.x;
-        const dy = to.y - f.y;
-        // Keep to the right-hand lane.
+        dx = to.x - f.x;
+        dy = to.y - f.y;
         if (a.kind === "car" || a.kind === "bus") {
-          fx += -dy * 0.18;
-          fy += dx * 0.18;
-          const key = a.kind === "car" ? (dx !== 0 ? "v-car-x" : "v-car-y") : dx !== 0 ? "v-bus-x" : "v-bus-y";
-          if (a.img.texture.key !== key && (dx || dy)) a.img.setTexture(key);
+          // Keep to the right-hand lane.
+          fx += -dy * 0.17;
+          fy += dx * 0.17;
         } else {
-          fx += Math.sin(a.from * 9.1) * 0.25;
-          fy += Math.cos(a.from * 7.3) * 0.25;
-          a.img.setFlipX(dx < 0 || dy > 0);
+          // People keep to the edge of roads (the pavement); elsewhere they spread out a little.
+          const onRoad = t.cols[a.from].g === "road" || t.cols[a.to].g === "road";
+          const off = onRoad ? 0.4 : 0.22;
+          fx += -dy * off * a.side + (dy ? 0 : Math.sin(a.from * 9.1) * 0.12);
+          fy += dx * off * a.side + (dx ? 0 : Math.cos(a.from * 7.3) * 0.12);
         }
         if (a.kind === "car" && !this.deps.reduced) {
           a.puff = (a.puff ?? 0) + dt * 1000;
-          if (a.puff > 1400) {
+          if (a.puff > 2600) {
             a.puff = 0;
-            this.puff(a.img.x - dx * 8 + dy * 8, a.img.y - 3, 0x9a9a9a, 0.22, 0.35, 14);
+            const back = P(fx - dx * 0.25, fy - dy * 0.25);
+            this.puff(back.x, back.y - 3, 0x7d7d7d, 0.12, 0.18, 10);
           }
         }
       }
-      const p = P(fx, fy);
-      a.img.setPosition(p.x, p.y).setDepth(colDepth(Math.ceil(fx), Math.ceil(fy)) - 20);
-      if (a.kind === "car") {
-        // Cars keep their paint colour but darken at night.
-        continue;
+      // Animate legs and face the way they're going.
+      if (a.kind === "walker" || a.kind === "bike") {
+        a.step += dt * (a.kind === "bike" ? 3 : 5.5);
+        a.frame = Math.floor(a.step) % 2 === 0 ? 0 : 1;
       }
-      if (a.kind === "bus") a.img.setTint(tint);
+      if (dx || dy) {
+        const key = this.textureFor(a, dx, dy);
+        if (a.img.texture.key !== key) a.img.setTexture(key);
+        if (a.kind === "walker" || a.kind === "bike") a.img.setFlipX(dx - dy < 0);
+      }
+      const p = P(fx, fy);
+      a.img.setPosition(p.x, p.y).setDepth(colDepth(Math.ceil(fx), Math.ceil(fy)) - 20).setTint(tint);
+      if (a.light) {
+        const ahead = P(fx + dx * 0.45, fy + dy * 0.45);
+        a.light.setPosition(ahead.x, ahead.y - 2).setDepth(a.img.depth + 0.1).setAlpha(night * 0.85);
+      }
     }
   }
 
@@ -899,7 +968,8 @@ export class WorldScene extends Phaser.Scene {
     const lit = this.e.night * (t.residents > 0 ? 1 : 0);
     this.cols.forEach((parts, i) => {
       const on = homes.has(i) ? lit : 0;
-      for (const p of parts) if (p.glow) p.glow.setAlpha(on * 0.95);
+      // Homes light up when people live there; shops, schools and lamps light up every night.
+      for (const p of parts) if (p.glow) p.glow.setAlpha((piece(p.id).housing ? on : this.e.night) * 0.95);
     });
     // Smog where the air is dirty.
     for (const s of this.smog) {

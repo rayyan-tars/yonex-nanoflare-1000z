@@ -4,6 +4,8 @@
  * centred on (0, 0) and z is height in pixels, projected isometrically.
  */
 import type Phaser from "phaser";
+import { drawAgents } from "./artAgents";
+import { drawTown } from "./artTown";
 
 export const TW = 64;
 export const TH = 32;
@@ -19,7 +21,7 @@ export interface TexInfo {
   oy: number;
 }
 
-type Ctx = CanvasRenderingContext2D;
+export type Ctx = CanvasRenderingContext2D;
 export const P = (gx: number, gy: number, z = 0) => ({ x: (gx - gy) * (TW / 2), y: (gx + gy) * (TH / 2) - z });
 
 export function shade(c: number, f: number) {
@@ -30,7 +32,7 @@ export function shade(c: number, f: number) {
 }
 export const hex = (c: number, a = 1) => `rgba(${(c >> 16) & 255},${(c >> 8) & 255},${c & 255},${a})`;
 
-function poly(ctx: Ctx, pts: { x: number; y: number }[], fill: string, stroke?: string, lw = 0.7) {
+export function poly(ctx: Ctx, pts: { x: number; y: number }[], fill: string, stroke?: string, lw = 0.7) {
   ctx.beginPath();
   pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
   ctx.closePath();
@@ -43,9 +45,9 @@ function poly(ctx: Ctx, pts: { x: number; y: number }[], fill: string, stroke?: 
   }
 }
 
-const EDGE = "rgba(40,30,25,0.35)";
+export const EDGE = "rgba(40,30,25,0.35)";
 
-interface Box {
+export interface Box {
   x0: number;
   x1: number;
   y0: number;
@@ -55,7 +57,7 @@ interface Box {
 }
 
 /** An isometric box: top, front-left (+y) and front-right (+x) faces. */
-function prism(ctx: Ctx, b: Box, color: number, opt: { top?: number; edge?: string; flatTop?: boolean } = {}) {
+export function prism(ctx: Ctx, b: Box, color: number, opt: { top?: number; edge?: string; flatTop?: boolean } = {}) {
   const { x0, x1, y0, y1, z0, z1 } = b;
   // Front-left face (y = y1)
   poly(ctx, [P(x0, y1, z1), P(x1, y1, z1), P(x1, y1, z0), P(x0, y1, z0)], hex(shade(color, 0.9)), opt.edge ?? EDGE);
@@ -65,15 +67,15 @@ function prism(ctx: Ctx, b: Box, color: number, opt: { top?: number; edge?: stri
 }
 
 /** A rectangle on the front-left face (y = y), between gx a..b and heights za..zb. */
-function onFaceY(ctx: Ctx, y: number, a: number, b: number, za: number, zb: number, fill: string) {
+export function onFaceY(ctx: Ctx, y: number, a: number, b: number, za: number, zb: number, fill: string) {
   poly(ctx, [P(a, y, zb), P(b, y, zb), P(b, y, za), P(a, y, za)], fill);
 }
 /** A rectangle on the front-right face (x = x). */
-function onFaceX(ctx: Ctx, x: number, a: number, b: number, za: number, zb: number, fill: string) {
+export function onFaceX(ctx: Ctx, x: number, a: number, b: number, za: number, zb: number, fill: string) {
   poly(ctx, [P(x, a, zb), P(x, b, zb), P(x, b, za), P(x, a, za)], fill);
 }
 
-function cylinder(ctx: Ctx, cx: number, cy: number, r: number, z0: number, z1: number, color: number, top?: number) {
+export function cylinder(ctx: Ctx, cx: number, cy: number, r: number, z0: number, z1: number, color: number, top?: number) {
   const ry = r / 2;
   const g = ctx.createLinearGradient(cx - r, 0, cx + r, 0);
   g.addColorStop(0, hex(shade(color, 1.05)));
@@ -96,7 +98,7 @@ function cylinder(ctx: Ctx, cx: number, cy: number, r: number, z0: number, z1: n
   ctx.stroke();
 }
 
-function blob(ctx: Ctx, x: number, y: number, r: number, color: number, light = 1.25) {
+export function blob(ctx: Ctx, x: number, y: number, r: number, color: number, light = 1.25) {
   const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
   g.addColorStop(0, hex(shade(color, light)));
   g.addColorStop(1, hex(shade(color, 0.78)));
@@ -106,7 +108,7 @@ function blob(ctx: Ctx, x: number, y: number, r: number, color: number, light = 
   ctx.fill();
 }
 
-function soft(ctx: Ctx, x: number, y: number, r: number, color: number, alpha: number) {
+export function soft(ctx: Ctx, x: number, y: number, r: number, color: number, alpha: number) {
   const g = ctx.createRadialGradient(x, y, 0, x, y, r);
   g.addColorStop(0, hex(color, alpha));
   g.addColorStop(1, hex(color, 0));
@@ -115,7 +117,7 @@ function soft(ctx: Ctx, x: number, y: number, r: number, color: number, alpha: n
 }
 
 /** Seeded per-texture random, so the art is the same every time. */
-function rand(seed: number) {
+export function rand(seed: number) {
   let s = seed;
   return () => {
     s = (s * 16807) % 2147483647;
@@ -133,7 +135,7 @@ export class Art {
   constructor(private scene: Phaser.Scene) {}
 
   /** Draws a texture whose ground centre sits `up` px below the top and `left` px from the left. */
-  private bake(key: string, w: number, h: number, left: number, up: number, draw: (ctx: Ctx) => void) {
+  bake(key: string, w: number, h: number, left: number, up: number, draw: (ctx: Ctx) => void) {
     const canvas = document.createElement("canvas");
     canvas.width = Math.ceil(w * RES);
     canvas.height = Math.ceil(h * RES);
@@ -152,7 +154,7 @@ export class Art {
   }
 
   /** A standard texture frame for a tile-sized object up to `tall` px high. */
-  private obj(key: string, tall: number, draw: (ctx: Ctx) => void, wide = 1) {
+  obj(key: string, tall: number, draw: (ctx: Ctx) => void, wide = 1) {
     const w = TW * wide + 12;
     this.bake(key, w, tall + TH / 2 + 10, w / 2, tall + 4, draw);
   }
@@ -164,10 +166,12 @@ export class Art {
     this.machines();
     this.nature();
     this.fx();
+    drawTown(this);
+    drawAgents(this);
   }
 
   // ---------------------------------------------------------------- ground
-  private groundTile(key: string, draw: (ctx: Ctx) => void, base?: number) {
+  groundTile(key: string, draw: (ctx: Ctx) => void, base?: number) {
     this.bake(key, TW + 2, TH + 2, TW / 2 + 1, TH / 2 + 1, (ctx) => {
       const d = [P(-0.505, -0.505), P(0.505, -0.505), P(0.505, 0.505), P(-0.505, 0.505)];
       if (base !== undefined) poly(ctx, d, hex(base));
@@ -821,47 +825,6 @@ export class Art {
       ctx.fillStyle = "rgba(255,255,255,0.18)";
       ctx.fill();
     });
-    // Vehicles: one for each direction of travel (along grid x, along grid y).
-    const car = (along: "x" | "y", body: number, key: string, long = 0.22, tall = 7) => {
-      this.obj(key, 18, (ctx) => {
-        const lx = along === "x" ? long : 0.11;
-        const ly = along === "x" ? 0.11 : long;
-        ctx.beginPath();
-        ctx.ellipse(0, 1, 10, 4, 0, 0, Math.PI * 2);
-        ctx.fillStyle = "rgba(0,0,0,0.18)";
-        ctx.fill();
-        prism(ctx, { x0: -lx, x1: lx, y0: -ly, y1: ly, z0: 1.5, z1: tall - 2.5 }, body);
-        const cx = along === "x" ? lx * 0.6 : 0.09;
-        const cy = along === "x" ? 0.09 : ly * 0.6;
-        prism(ctx, { x0: -cx, x1: cx, y0: -cy, y1: cy, z0: tall - 2.5, z1: tall + 1.5 }, 0xcfe6f0, { top: shade(body, 1.1) });
-      });
-    };
-    car("x", 0xffffff, "v-car-x");
-    car("y", 0xffffff, "v-car-y");
-    car("x", 0x3a8fd0, "v-bus-x", 0.36, 10);
-    car("y", 0x3a8fd0, "v-bus-y", 0.36, 10);
-    this.obj("v-person", 14, (ctx) => {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(-1.3, -7, 2.6, 6);
-      ctx.beginPath();
-      ctx.arc(0, -9, 1.9, 0, Math.PI * 2);
-      ctx.fillStyle = "#f2c9a0";
-      ctx.fill();
-    });
-    this.obj("v-bike", 14, (ctx) => {
-      ctx.strokeStyle = "#333";
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      ctx.arc(-3, -1.5, 1.6, 0, Math.PI * 2);
-      ctx.arc(3, -1.5, 1.6, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(-1, -9, 2.4, 5);
-      ctx.beginPath();
-      ctx.arc(0.2, -10.5, 1.6, 0, Math.PI * 2);
-      ctx.fillStyle = "#f2c9a0";
-      ctx.fill();
-    });
     this.bake("fx-butterfly", 10, 8, 5, 4, (ctx) => {
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
@@ -877,13 +840,6 @@ export class Art {
       ctx.quadraticCurveTo(-3, -3, 0, 1);
       ctx.quadraticCurveTo(3, -3, 6, -1);
       ctx.stroke();
-    });
-    this.bake("fx-rain", 2, 14, 1, 0, (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 0, 14);
-      g.addColorStop(0, "rgba(220,235,255,0)");
-      g.addColorStop(1, "rgba(220,235,255,0.8)");
-      ctx.fillStyle = g;
-      ctx.fillRect(-0.5, 0, 1, 14);
     });
     // Collection bubbles and problem badges.
     const bubble = (key: string, ring: number, icon: (ctx: Ctx) => void) =>

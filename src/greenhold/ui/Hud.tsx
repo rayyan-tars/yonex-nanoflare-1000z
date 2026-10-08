@@ -1,9 +1,23 @@
 "use client";
 
-import { CloudFog, Coins, Eraser, Gear, Hammer, Lightning, Smiley, SmileyMeh, SmileySad, Star, Users } from "@phosphor-icons/react";
+import {
+  CloudFog,
+  Coins,
+  Eraser,
+  Gear,
+  Globe,
+  Hammer,
+  Lightning,
+  Smiley,
+  SmileyMeh,
+  SmileySad,
+  Star,
+  Users,
+} from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { GOALS, airLabel, problem } from "../model/sim";
+import { airLabel, problem } from "../model/sim";
+import { WORLDS } from "../model/worlds";
 import { TH_TITLES } from "../model/world";
 import { useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
@@ -12,19 +26,37 @@ export function TopBar() {
   const store = useGame();
   const t = store.town;
   const s = store.sim.stats;
-  const Face = s.happiness >= 65 ? Smiley : s.happiness >= 40 ? SmileyMeh : SmileySad;
+  const Face =
+    s.happiness >= 65 ? Smiley : s.happiness >= 40 ? SmileyMeh : SmileySad;
   return (
     <>
       <div className="gh-town">
-        <button type="button" className="gh-town__badge" onClick={() => store.openPanel("townhall")} aria-label={`Town Hall level ${t.th}`}>
+        <button
+          type="button"
+          className="gh-town__badge"
+          onClick={() => store.openPanel("townhall")}
+          aria-label={`Town Hall level ${t.th}`}
+        >
           <span className="gh-town__lvl">{t.th}</span>
         </button>
         <div className="gh-town__body">
           <span className="gh-town__name gh-display">{t.name}</span>
-          <span className="gh-town__title">{TH_TITLES[t.th]}</span>
-          <button type="button" className="gh-stars" onClick={() => store.openPanel("stars")} aria-label={`${s.starCount} of 3 eco stars`}>
+          <span className="gh-town__title">
+            World {t.world + 1} · {TH_TITLES[t.th]}
+          </span>
+          <button
+            type="button"
+            className="gh-stars"
+            onClick={() => store.openPanel("stars")}
+            aria-label={`${s.starCount} of 3 eco stars`}
+          >
             {s.stars.map((on, k) => (
-              <Star key={k} weight="fill" className={on ? "is-on" : undefined} aria-hidden="true" />
+              <Star
+                key={k}
+                weight="fill"
+                className={on ? "is-on" : undefined}
+                aria-hidden="true"
+              />
             ))}
           </button>
         </div>
@@ -32,7 +64,11 @@ export function TopBar() {
 
       <div className="gh-res" aria-label="Your town">
         <div className="gh-res__row" id="gh-coins">
-          <Coins weight="fill" className="gh-ico gh-ico--gold" aria-hidden="true" />
+          <Coins
+            weight="fill"
+            className="gh-ico gh-ico--gold"
+            aria-hidden="true"
+          />
           <span className="gh-res__num">{fmt(t.coins)}</span>
           <span className="gh-res__label">coins</span>
         </div>
@@ -67,12 +103,26 @@ export function Meters() {
           <span className="gh-meter__top">
             <span>Energy</span>
             <b>
-              {fmt(Math.floor(e.supply + 0.01))}/{fmt(Math.ceil(e.demand - 0.01))}
+              {fmt(Math.floor(e.supply + 0.01))}/
+              {fmt(Math.ceil(e.demand - 0.01))}
             </b>
           </span>
-          <span className="gh-meter__bar" title={`${cleanPct}% from sun and wind`}>
-            <i className="gh-meter__clean" style={{ width: `${Math.min(100, (e.clean / Math.max(1, e.demand, e.supply)) * 100)}%` }} />
-            <i className="gh-meter__dirty" style={{ width: `${Math.min(100, (e.dirty / Math.max(1, e.demand, e.supply)) * 100)}%` }} />
+          <span
+            className="gh-meter__bar"
+            title={`${cleanPct}% from sun and wind`}
+          >
+            <i
+              className="gh-meter__clean"
+              style={{
+                width: `${Math.min(100, (e.clean / Math.max(1, e.demand, e.supply)) * 100)}%`,
+              }}
+            />
+            <i
+              className="gh-meter__dirty"
+              style={{
+                width: `${Math.min(100, (e.dirty / Math.max(1, e.demand, e.supply)) * 100)}%`,
+              }}
+            />
           </span>
           <small className="gh-meter__note">{cleanPct}% clean</small>
         </span>
@@ -95,12 +145,13 @@ export function Meters() {
   );
 }
 
-/** Fern, the eco advisor: a problem to fix now, or the one next goal. */
+/** Fern, the eco advisor: a problem to fix now, or the next achievement in this world. */
 export function Advisor() {
   const store = useGame();
   const t = store.town;
+  const world = WORLDS[t.world];
   const warn = problem(t, store.sim.stats);
-  const goal = GOALS[t.goal];
+  const goal = world.achievements[t.goal];
   const at = warn?.at;
   return (
     <AnimatePresence mode="wait">
@@ -125,20 +176,50 @@ export function Advisor() {
           ) : goal ? (
             <>
               <b>
-                Goal {t.goal + 1} of {GOALS.length} · +{goal.coins} coins
+                {world.name} · achievement {t.goal + 1} of{" "}
+                {world.achievements.length} · +{goal.coins} coins
               </b>
               <strong>{goal.name}</strong>
               <span>{goal.why}</span>
+              <span className="gh-progress" aria-hidden="true">
+                {world.achievements.map((a, k) => (
+                  <i
+                    key={a.id}
+                    className={
+                      k < t.goal
+                        ? "is-done"
+                        : k === t.goal
+                          ? "is-now"
+                          : undefined
+                    }
+                  />
+                ))}
+              </span>
             </>
           ) : (
             <>
-              <b>All goals done</b>
-              Your town runs on clean power with clean air. Keep building however you like!
+              <b>{world.name} complete</b>
+              {t.world < WORLDS.length - 1
+                ? "Every achievement done! The next world is waiting."
+                : "You finished every world. Keep building however you like!"}
+              {t.world < WORLDS.length - 1 && (
+                <button
+                  type="button"
+                  className="gh-btn gh-btn--green gh-advisor__next"
+                  onClick={() => store.openPanel("worlds")}
+                >
+                  Go to the next world
+                </button>
+              )}
             </>
           )}
         </span>
         {at !== undefined && (
-          <button type="button" className="gh-link" onClick={() => store.bus.emit("focus", { i: at })}>
+          <button
+            type="button"
+            className="gh-link"
+            onClick={() => store.bus.emit("focus", { i: at })}
+          >
             Show me
           </button>
         )}
@@ -152,22 +233,38 @@ export function Dock() {
   const remove = store.tool.kind === "remove";
   return (
     <div className="gh-dock">
-      <button type="button" className="gh-round" onClick={() => store.openPanel("settings")}>
-        <Gear weight="fill" aria-hidden="true" />
-        <small>Settings</small>
-      </button>
-      <button
-        type="button"
-        className={`gh-round ${remove ? "is-on is-red" : ""}`}
-        onClick={() => {
-          store.setCategory(null);
-          store.setTool(remove ? { kind: "none" } : { kind: "remove" });
-        }}
-        aria-pressed={remove}
-      >
-        <Eraser weight="fill" aria-hidden="true" />
-        <small>Remove</small>
-      </button>
+      {!store.category && (
+        <>
+          <button
+            type="button"
+            className="gh-round"
+            onClick={() => store.openPanel("worlds")}
+          >
+            <Globe weight="fill" aria-hidden="true" />
+            <small>Worlds</small>
+          </button>
+          <button
+            type="button"
+            className="gh-round"
+            onClick={() => store.openPanel("settings")}
+          >
+            <Gear weight="fill" aria-hidden="true" />
+            <small>Settings</small>
+          </button>
+          <button
+            type="button"
+            className={`gh-round ${remove ? "is-on is-red" : ""}`}
+            onClick={() => {
+              store.setCategory(null);
+              store.setTool(remove ? { kind: "none" } : { kind: "remove" });
+            }}
+            aria-pressed={remove}
+          >
+            <Eraser weight="fill" aria-hidden="true" />
+            <small>Remove</small>
+          </button>
+        </>
+      )}
       <button
         type="button"
         className={`gh-build ${store.category ? "is-open" : ""}`}
@@ -230,9 +327,20 @@ export function FlyLayer() {
       const r = document.getElementById("gh-coins")?.getBoundingClientRect();
       const tx = r ? r.left + 18 : window.innerWidth - 120;
       const ty = r ? r.top + r.height / 2 : 30;
-      const batch = Array.from({ length: 8 }, (_, k) => ({ id: ++id, x: d.x + (Math.random() - 0.5) * 40, y: d.y + (Math.random() - 0.5) * 30, tx, ty, k, sw: (Math.random() - 0.5) * 60 }));
+      const batch = Array.from({ length: 8 }, (_, k) => ({
+        id: ++id,
+        x: d.x + (Math.random() - 0.5) * 40,
+        y: d.y + (Math.random() - 0.5) * 30,
+        tx,
+        ty,
+        k,
+        sw: (Math.random() - 0.5) * 60,
+      }));
       setItems((v) => [...v, ...batch]);
-      window.setTimeout(() => setItems((v) => v.filter((x) => !batch.includes(x))), 1400);
+      window.setTimeout(
+        () => setItems((v) => v.filter((x) => !batch.includes(x))),
+        1400,
+      );
     };
     window.addEventListener("greenhold:fly", on);
     return () => window.removeEventListener("greenhold:fly", on);
@@ -244,7 +352,12 @@ export function FlyLayer() {
           key={f.id}
           className="gh-fly__item"
           initial={{ x: f.x, y: f.y, scale: 0.4, opacity: 0 }}
-          animate={{ x: [f.x, f.x + f.sw, f.tx], y: [f.y, f.y - 50, f.ty], scale: [0.4, 1.1, 0.7], opacity: [0, 1, 1] }}
+          animate={{
+            x: [f.x, f.x + f.sw, f.tx],
+            y: [f.y, f.y - 50, f.ty],
+            scale: [0.4, 1.1, 0.7],
+            opacity: [0, 1, 1],
+          }}
           transition={{ duration: 0.9, delay: f.k * 0.05, ease: "easeInOut" }}
         >
           <Coins weight="fill" />

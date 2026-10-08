@@ -8,7 +8,7 @@ import { sfx } from "./audio";
 import { StoreContext, useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
 import { Advisor, Dock, FlyLayer, Meters, Toasts, TopBar } from "./Hud";
-import { InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel } from "./Panels";
+import { CompletePanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
 import { Shop } from "./Shop";
 import { Splash } from "./Splash";
 
@@ -134,6 +134,8 @@ function Game() {
         {store.panel === "townhall" && <TownHallPanel key="th" />}
         {store.panel === "stars" && <StarsPanel key="stars" />}
         {store.panel === "settings" && <SettingsPanel key="settings" />}
+        {store.panel === "worlds" && <WorldsPanel key="worlds" />}
+        {store.panel === "complete" && <CompletePanel key="complete" />}
       </AnimatePresence>
     </>
   );
@@ -147,6 +149,7 @@ function useSounds() {
       store.bus.on("col", ({ change }) => store.sound && (change === "remove" ? sfx.remove() : change === "ground" ? sfx.ground() : sfx.place())),
       store.bus.on("goal", play(sfx.goal)),
       store.bus.on("townhall", play(sfx.goal)),
+      store.bus.on("world", play(sfx.goal)),
       store.bus.on("collect", play(sfx.collect)),
       store.bus.on("fail", play(sfx.error)),
       store.bus.on("moveIn", play(sfx.movein)),

@@ -7,8 +7,8 @@ import { MAX_TH, N, type Column, type Ground, type Town } from "./world";
 
 export const SAVE_KEY = "greenhold.save.v2";
 
-const GROUNDS: readonly Ground[] = ["grass", "sand", "water", "road", "path", "bike"];
-const CODE = "gswrpb";
+const GROUNDS: readonly Ground[] = ["grass", "sand", "water", "road", "path", "bike", "plaza"];
+const CODE = "gswrpbz";
 
 export function serialize(t: Town, air?: Float32Array): string {
   const { cols, ...rest } = t;
@@ -57,6 +57,8 @@ export function deserialize(text: string): { town: Town; air: Float32Array | nul
   const counts = (f.counts && typeof f.counts === "object" ? f.counts : {}) as Record<string, unknown>;
   const town: Town = {
     v: 2,
+    world: Math.floor(num(f.world, 0, 9) ?? 0),
+    complete: f.complete === true,
     seed,
     name: typeof f.name === "string" && f.name.trim() ? f.name.slice(0, 24) : "Greenhold",
     cols,

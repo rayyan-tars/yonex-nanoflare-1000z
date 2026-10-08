@@ -6,11 +6,12 @@
  */
 import { piece, type Category } from "../model/pieces";
 import { deserialize, SAVE_KEY, serialize } from "../model/save";
-import { GOALS, analyze, catchUp, collectTaxes, newSim, tick, type Sim, type SimEvent } from "../model/sim";
+import { analyze, catchUp, collectTaxes, newSim, tick, type Sim, type SimEvent } from "../model/sim";
+import { WORLDS } from "../model/worlds";
 import { TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, upgradeTownHall, type Town } from "../model/world";
 
 export type Tool = { kind: "none" } | { kind: "build"; id: string } | { kind: "remove" };
-export type Panel = null | "townhall" | "stars" | "settings" | "intro";
+export type Panel = null | "townhall" | "stars" | "settings" | "intro" | "worlds" | "complete";
 
 export interface Toast {
   id: number;
@@ -22,6 +23,7 @@ export interface BusEvents {
   col: { i: number; change: "add" | "remove" | "ground" };
   moveIn: { n: number };
   goal: { id: string };
+  world: { index: number };
   townhall: { level: number };
   collect: { amount: number };
   fail: { i: number; reason: string };
@@ -42,6 +44,13 @@ export class Bus {
 }
 
 const SETTINGS_KEY = "greenhold.settings.v1";
+const PROGRESS_KEY = "greenhold.worlds.v1";
+
+/** Which worlds are open and which are finished (kept across towns). */
+export interface Progress {
+  unlocked: number;
+  done: number[];
+}
 const TICK = 0.25;
 
 function readLS(key: string) {
@@ -60,8 +69,8 @@ function writeLS(key: string, value: string | null) {
   }
 }
 
-function freshTown(now: number) {
-  const t = newTown(Math.floor(Math.random() * 1e9), now);
+function freshTown(now: number, world: number) {
+  const t = newTown(Math.floor(Math.random() * 1e9), now, world);
   // The village is already lived in.
   t.residents = analyze(t, new Float32Array(t.cols.length)).housing;
   return t;
@@ -80,6 +89,7 @@ export class GameStore {
   toasts: Toast[] = [];
   awayFor = 0;
   saveState: "new" | "loaded" | "repaired" = "new";
+  progress: Progress = { unlocked: 0, done: [] };
   /** Shop pictures drawn by the game art. */
   previews: Record<string, string> = {};
   /** Screen position (CSS px) of a column, set by the scene. */
@@ -105,6 +115,13 @@ export class GameStore {
   }
 
   private load() {
+    try {
+      const p = JSON.parse(readLS(PROGRESS_KEY) ?? "null");
+      if (p && Number.isInteger(p.unlocked) && Array.isArray(p.done))
+        this.progress = { unlocked: Math.min(WORLDS.length - 1, Math.max(0, p.unlocked)), done: p.done.filter((d: unknown) => Number.isInteger(d)) };
+    } catch {
+      // No progress yet.
+    }
     const now = this.now();
     const text = readLS(SAVE_KEY);
     const loaded = text ? deserialize(text) : null;
@@ -115,12 +132,8 @@ export class GameStore {
       this.saveState = "loaded";
       this.awayFor = catchUp(this.town, this.sim, now);
     } else {
-      this.town = freshTown(now);
       this.saveState = text ? "repaired" : "new";
-      this.panel = "intro";
-      // Let the coal smoke build up so the problem is visible from the start.
-      for (let k = 0; k < 400; k++) tick(this.town, this.sim, TICK);
-      this.town.goal = 0;
+      this.startTown(this.progress.unlocked, now);
     }
     this.town.lastTs = now;
     this.sim.stats = analyze(this.town, this.sim.air);
@@ -165,9 +178,20 @@ export class GameStore {
 
   private handle(e: SimEvent) {
     if (e.type === "goal") {
-      const g = GOALS.find((x) => x.id === e.id)!;
+      const g = WORLDS[this.town.world].achievements.find((x) => x.id === e.id)!;
       this.bus.emit("goal", { id: e.id });
-      this.toast(`Done: ${g.name} (+${g.coins} coins)`, "good");
+      this.toast(`Achievement: ${g.name} (+${g.coins} coins)`, "good");
+      this.persist();
+    }
+    if (e.type === "world") {
+      const w = this.town.world;
+      if (!this.progress.done.includes(w)) this.progress.done = [...this.progress.done, w];
+      this.progress.unlocked = Math.max(this.progress.unlocked, Math.min(WORLDS.length - 1, w + 1));
+      writeLS(PROGRESS_KEY, JSON.stringify(this.progress));
+      this.bus.emit("world", { index: w });
+      this.tool = { kind: "none" };
+      this.category = null;
+      this.panel = "complete";
       this.persist();
     }
     if (e.type === "moveIn") this.bus.emit("moveIn", { n: e.n });
@@ -275,22 +299,37 @@ export class GameStore {
     return true;
   }
 
-  reset() {
-    writeLS(SAVE_KEY, null);
-    this.town = freshTown(this.now());
+  /** A fresh town in a world, with the starting problem already visible. */
+  private startTown(world: number, now: number) {
+    this.town = freshTown(now, world);
     this.sim = newSim();
+    // Let the smoke build up so the problem shows from the first second.
     for (let k = 0; k < 400; k++) tick(this.town, this.sim, TICK);
     this.town.goal = 0;
+    this.town.complete = false;
+    this.town.counts = { trees: 0, collected: 0 };
     this.sim.stats = analyze(this.town, this.sim.air);
+    this.panel = "intro";
+  }
+
+  /** Starts (or restarts) a world. Locked worlds can't be started. */
+  playWorld(world: number) {
+    if (world > this.progress.unlocked) return;
+    writeLS(SAVE_KEY, null);
+    this.startTown(world, this.now());
     this.tool = { kind: "none" };
     this.category = null;
     this.selected = null;
-    this.panel = "intro";
     this.saveState = "new";
     this.awayFor = 0;
     this.bus.emit("reset", {});
     this.persist();
     this.changed();
+  }
+
+  /** Starts the current world over. */
+  reset() {
+    this.playWorld(this.town.world);
   }
 
   setPreviews(p: Record<string, string>) {

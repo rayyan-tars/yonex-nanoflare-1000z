@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { PIECES } from "./pieces";
 import { deserialize, serialize } from "./save";
-import { GOALS, analyze, collectTaxes, newSim, tick } from "./sim";
+import { analyze, collectTaxes, newSim, tick } from "./sim";
+import { WORLDS } from "./worlds";
 import { MAX_HEIGHT, N, START_COAL, TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, type Town } from "./world";
 
 /** A starting village with plenty of coins and a clear lot south-east of the street. */
@@ -112,7 +113,8 @@ describe("progress", () => {
     run(t, 5);
     expect(t.goal).toBe(1);
     expect(t.coins).toBeLessThanOrEqual(coins + 100);
-    expect(new Set(GOALS.map((g) => g.id)).size).toBe(GOALS.length);
+    const ids = WORLDS.flatMap((w) => w.achievements.map((a) => a.id));
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("the Town Hall upgrade needs residents and eco stars", () => {
@@ -140,5 +142,53 @@ describe("saves", () => {
     expect(deserialize(JSON.stringify({ ...f, s: { ...f.s, 5: ["dragon"] } }))).toBeNull();
     expect(deserialize(JSON.stringify({ ...f, th: 9 }))).toBeNull();
     expect(deserialize(JSON.stringify({ ...f, coins: -50 }))!.town.coins).toBe(0);
+  });
+});
+
+describe("worlds", () => {
+  const settle = (t: Town) => {
+    t.residents = analyze(t, new Float32Array(N * N)).housing;
+    return run(t, 60).stats;
+  };
+
+  it("each world starts with its own problem", () => {
+    const valley = settle(newTown(1, 0, 0));
+    expect(valley.energy.dirty).toBeGreaterThan(0);
+    const city = newTown(1, 0, 1);
+    const cs = settle(city);
+    expect(city.th).toBe(2);
+    expect(cs.travel.carShare).toBeGreaterThan(0.9);
+    expect(cs.energy.cleanShare).toBe(1);
+    expect(cs.noAccess).toEqual([]);
+    const isle = newTown(1, 0, 2);
+    const is = settle(isle);
+    expect(isle.cols.filter((c) => c.g === "water").length).toBeGreaterThan(N * N * 0.6);
+    expect(is.energy.dirty).toBeGreaterThan(0);
+    expect(is.noAccess).toEqual([]);
+  });
+
+  it("finishing the last achievement completes the world, once", () => {
+    const t = village();
+    t.goal = WORLDS[0].achievements.length - 1;
+    const sim = newSim();
+    const fired: string[] = [];
+    // Make the last achievement (3 eco stars) true by forcing a clean, car-free town.
+    const last = WORLDS[0].achievements[t.goal];
+    const orig = last.done;
+    (last as { done: typeof orig }).done = () => true;
+    try {
+      for (let k = 0; k < 8; k++) fired.push(...tick(t, sim, 0.25).map((e) => e.type));
+    } finally {
+      (last as { done: typeof orig }).done = orig;
+    }
+    expect(t.complete).toBe(true);
+    expect(fired.filter((e) => e === "world")).toHaveLength(1);
+  });
+
+  it("shops and cafés earn coins from nearby residents", () => {
+    const t = village();
+    const before = analyze(t, new Float32Array(N * N)).income;
+    build(t, 27, 32, "cafe");
+    expect(analyze(t, new Float32Array(N * N)).income).toBeGreaterThan(before);
   });
 });

@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { PIECES, piece } from "../model/pieces";
 import { STAR_NAMES, airLabel, homeCapacity, nextUpgrade } from "../model/sim";
+import { WORLDS } from "../model/worlds";
 import { CHEST_CAP, MAX_HEIGHT, TH_TITLES, removeInfo, thUpgradeCheck } from "../model/world";
 import { useGame } from "./context";
 import { ECO_GRADE, chips, fmt } from "./format";
@@ -63,38 +64,145 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 export function IntroPanel() {
   const store = useGame();
+  const t = store.town;
+  const world = WORLDS[t.world];
   const close = () => store.openPanel(null);
   return (
-    <Modal title="Welcome, Mayor!" onClose={close}>
+    <Modal title={`World ${t.world + 1}: ${world.name}`} onClose={close}>
+      <div className="gh-world-hero" aria-hidden="true">
+        {world.emoji}
+      </div>
       <p className="gh-lead">
-        Your village runs on a <b>smoky coal plant</b>, and the smoke drifts over people&rsquo;s homes. Grow your town and clear the air.
+        <b>The problem:</b> {world.problem}
+      </p>
+      <p className="gh-lead">
+        <b>Your mission:</b> {world.mission}
       </p>
       <ul className="gh-intro">
         <li>
           <span>🧱</span>
           <span>
-            <b>Build anything.</b> Stack blocks and add a roof. With a path nearby, people move in.
+            <b>Build anything.</b> Stack blocks, add a roof, keep a path nearby, and people move in. Add cafés, schools and parks to make it a real town.
           </span>
         </li>
         <li>
-          <span>☀️</span>
+          <span>🏆</span>
           <span>
-            <b>Switch to clean power,</b> then remove the coal plant and watch the smog lift.
-          </span>
-        </li>
-        <li>
-          <span>⭐</span>
-          <span>
-            <b>Earn 3 eco stars:</b> clean power, clean air and green travel.
+            <b>{world.achievements.length} achievements</b> to earn, one at a time. Finish them all to unlock the next world.
           </span>
         </li>
       </ul>
-      <p className="gh-small gh-muted">Fern, your advisor, shows one goal at a time. Drag to move, scroll or pinch to zoom. Numbers are simplified game values.</p>
+      <p className="gh-small gh-muted">Drag to move, scroll or pinch to zoom. Numbers are simplified game values.</p>
       <div className="gh-row gh-row--end">
         <button type="button" className="gh-btn gh-btn--green gh-btn--big" onClick={close}>
           Let&rsquo;s go
         </button>
       </div>
+    </Modal>
+  );
+}
+
+/** Every world: which are open, which are done, and a way to play them. */
+export function WorldsPanel() {
+  const store = useGame();
+  const t = store.town;
+  const [confirm, setConfirm] = useState<number | null>(null);
+  return (
+    <Modal title="Worlds" onClose={() => store.openPanel(null)}>
+      <ol className="gh-worlds">
+        {WORLDS.map((w, i) => {
+          const locked = i > store.progress.unlocked;
+          const done = store.progress.done.includes(i);
+          const here = i === t.world;
+          const got = here ? t.goal : done ? w.achievements.length : 0;
+          return (
+            <li key={w.name} className={`gh-world ${locked ? "is-locked" : ""} ${here ? "is-here" : ""}`}>
+              <span className="gh-world__emoji" aria-hidden="true">
+                {locked ? "🔒" : w.emoji}
+              </span>
+              <span className="gh-world__body">
+                <b>
+                  {i + 1}. {w.name} {done && <span className="gh-world__done">Complete</span>}
+                </b>
+                <small>{locked ? "Finish the world before to unlock." : w.problem}</small>
+                {!locked && (
+                  <span className="gh-progress" aria-label={`${got} of ${w.achievements.length} achievements`}>
+                    {w.achievements.map((a, k) => (
+                      <i key={a.id} className={k < got ? "is-done" : undefined} />
+                    ))}
+                  </span>
+                )}
+              </span>
+              {!locked &&
+                (here ? (
+                  <span className="gh-small gh-muted">You&rsquo;re here</span>
+                ) : confirm === i ? (
+                  <span className="gh-world__confirm">
+                    <small>Leave this town?</small>
+                    <button type="button" className="gh-btn gh-btn--green" onClick={() => store.playWorld(i)}>
+                      Go
+                    </button>
+                  </span>
+                ) : (
+                  <button type="button" className="gh-btn gh-btn--green" onClick={() => setConfirm(i)}>
+                    Play
+                  </button>
+                ))}
+            </li>
+          );
+        })}
+      </ol>
+      <p className="gh-small gh-muted">Moving to another world starts a fresh town there. Finished worlds stay finished.</p>
+    </Modal>
+  );
+}
+
+/** Shown when the last achievement in a world is earned. */
+export function CompletePanel() {
+  const store = useGame();
+  const t = store.town;
+  const world = WORLDS[t.world];
+  const next = WORLDS[t.world + 1];
+  const s = store.sim.stats;
+  return (
+    <Modal title="World complete!" onClose={() => store.openPanel(null)}>
+      <div className="gh-world-hero gh-world-hero--win" aria-hidden="true">
+        🏆
+      </div>
+      <p className="gh-lead">
+        You turned <b>{world.name}</b> around: {Math.floor(t.residents)} happy residents, air that&rsquo;s {airLabel(s.homeAir).label.toLowerCase()}, and {Math.round(s.energy.cleanShare * 100)}% clean power.
+      </p>
+      <ul className="gh-checks">
+        {world.achievements.map((a) => (
+          <Check key={a.id} ok text={a.name} />
+        ))}
+      </ul>
+      {next ? (
+        <>
+          <p className="gh-callout">
+            <b>Next: {next.name}</b> {next.emoji}
+            <br />
+            {next.problem}
+          </p>
+          <div className="gh-row gh-row--between">
+            <button type="button" className="gh-btn" onClick={() => store.openPanel(null)}>
+              Keep building here
+            </button>
+            <button type="button" className="gh-btn gh-btn--green gh-btn--big" onClick={() => store.playWorld(t.world + 1)}>
+              Go to {next.name}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="gh-callout">You finished every world. Each one showed a real fix: clean power, walkable streets, and green, self-sufficient towns. 🌍</p>
+          <div className="gh-row gh-row--end">
+            <button type="button" className="gh-btn gh-btn--green" onClick={() => store.openPanel(null)}>
+              Keep building
+            </button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
@@ -111,6 +219,10 @@ export function TownHallPanel() {
       <div className="gh-th__chest">
         <span>
           Taxes waiting: <b>{fmt(t.chest)}</b> / {fmt(CHEST_CAP[t.th])} coins
+          <small className="gh-muted">
+            {" "}
+            · earning {fmt(s.taxRate * 60 + s.income)} a minute{s.income > 0 ? `, ${fmt(s.income)} of it from shops and cafés` : ""}
+          </small>
         </span>
         <button type="button" className="gh-btn gh-btn--gold" disabled={t.chest < 1} onClick={() => store.collect()}>
           Collect
@@ -192,7 +304,7 @@ export function SettingsPanel() {
       <div className="gh-row gh-row--between">
         {confirm ? (
           <>
-            <span className="gh-small">Start a new town? This can&rsquo;t be undone.</span>
+            <span className="gh-small">Start this world over? Your town here will be lost.</span>
             <span className="gh-row">
               <button type="button" className="gh-btn" onClick={() => setConfirm(false)}>
                 Keep my town
@@ -204,7 +316,7 @@ export function SettingsPanel() {
           </>
         ) : (
           <button type="button" className="gh-btn gh-btn--red-soft" onClick={() => setConfirm(true)}>
-            New town…
+            Restart this world…
           </button>
         )}
       </div>

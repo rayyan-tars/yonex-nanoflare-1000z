@@ -8,7 +8,7 @@
  */
 
 export type PieceKind = "ground" | "block" | "roof" | "machine" | "nature";
-export type Category = "homes" | "roofs" | "power" | "streets" | "nature";
+export type Category = "homes" | "roofs" | "town" | "power" | "streets" | "nature";
 
 export interface PieceDef {
   id: string;
@@ -44,6 +44,8 @@ export interface PieceDef {
   cover?: number;
   /** Makes homes this close nicer to live in (tiles). */
   nice?: number;
+  /** Coins per minute it earns when plenty of residents live within 6 tiles. */
+  income?: number;
   /** Can sit on top of a block, and counts as its roof. */
   rooftop?: boolean;
   /** Placed by the game: can't be bought or removed. */
@@ -58,12 +60,30 @@ export const PIECES: readonly PieceDef[] = [
   { id: "timber", name: "Timber block", kind: "block", cat: "homes", cost: 22, unlock: 1, carbon: -1, housing: 2, insul: 0.85, desc: "Warm and light. Houses 2 once roofed.", tip: "Wood stores the carbon the tree took in, and keeps heat in." },
   { id: "brick", name: "Recycled brick", kind: "block", cat: "homes", cost: 18, unlock: 1, carbon: 1, housing: 2, insul: 0.95, desc: "Made from old bricks. Houses 2 once roofed.", tip: "Reusing materials skips most of the carbon of making new ones." },
   { id: "concrete", name: "Concrete block", kind: "block", cat: "homes", cost: 14, unlock: 1, carbon: 6, housing: 2, insul: 1.25, desc: "Cheapest. Houses 2 once roofed.", tip: "Making cement releases lots of carbon, and plain concrete lets heat escape." },
+  { id: "sunny", name: "Yellow plaster", kind: "block", cat: "homes", cost: 20, unlock: 1, carbon: 3, housing: 2, insul: 1, desc: "Sunny walls, shutters and window boxes. Houses 2 once roofed.", tip: "Thick plaster walls keep homes cool in summer." },
+  { id: "rose", name: "Pink plaster", kind: "block", cat: "homes", cost: 20, unlock: 1, carbon: 3, housing: 2, insul: 1, desc: "Pink walls with blue shutters. Houses 2 once roofed.", tip: "Thick plaster walls keep homes cool in summer." },
+  { id: "sky", name: "Blue plaster", kind: "block", cat: "homes", cost: 20, unlock: 1, carbon: 3, housing: 2, insul: 1, desc: "Blue walls with red shutters. Houses 2 once roofed.", tip: "Thick plaster walls keep homes cool in summer." },
+  { id: "shopfront", name: "Shop floor", kind: "block", cat: "homes", cost: 40, unlock: 1, carbon: 3, income: 4, cover: 3, nice: 2, insul: 1, desc: "A shop at street level with homes above. Earns coins from neighbours.", tip: "Shops near homes mean errands on foot instead of by car." },
   { id: "glass", name: "Glass block", kind: "block", cat: "homes", cost: 26, unlock: 2, carbon: 5, housing: 2, insul: 1.1, desc: "Bright rooms that glow at night. Houses 2 once roofed.", tip: "Daylight saves lamps, but big windows lose heat." },
 
   // Roofs
   { id: "roof", name: "Tile roof", kind: "roof", cat: "roofs", cost: 10, unlock: 1, carbon: 1, desc: "Closes a building so people can move in.", tip: "Any roof turns the blocks below into homes." },
+  { id: "slate", name: "Slate roof", kind: "roof", cat: "roofs", cost: 12, unlock: 1, carbon: 1, insul: 0.95, desc: "Blue-grey slate. Closes a building so people can move in.", tip: "Slate lasts a century, so it rarely needs replacing." },
   { id: "solarroof", name: "Solar roof", kind: "roof", cat: "roofs", cost: 45, unlock: 1, carbon: 3, solar: 3, desc: "A roof that makes 3 clean energy.", tip: "Making power where it's used wastes none on the way." },
   { id: "greenroof", name: "Green roof", kind: "roof", cat: "roofs", cost: 24, unlock: 2, carbon: 0.5, absorb: 0.25, sink: 0.12, insul: 0.85, nice: 1, desc: "Plants on top: cleaner air and 15% less energy below.", tip: "Plants keep the building cool in summer and warm in winter." },
+
+  { id: "terrace", name: "Roof terrace", kind: "roof", cat: "roofs", cost: 30, unlock: 2, carbon: 1, nice: 2, desc: "A sunny deck with a parasol and plants.", tip: "Outdoor space at home makes people happier." },
+
+  // Town: places people walk to.
+  { id: "school", name: "School", kind: "machine", cat: "town", cost: 180, unlock: 1, carbon: 8, cover: 6, nice: 3, desc: "Children within 6 tiles walk to school.", tip: "The school run is a big share of morning traffic. A school within walking distance takes those cars off the road." },
+  { id: "cafe", name: "Café", kind: "machine", cat: "town", cost: 60, unlock: 1, carbon: 2, income: 6, nice: 3, desc: "Coffee and a sunny terrace. Earns coins from neighbours.", tip: "Places to meet nearby make a town worth walking around." },
+  { id: "shop", name: "Corner shop", kind: "machine", cat: "town", cost: 70, unlock: 1, carbon: 3, income: 5, cover: 4, nice: 1, desc: "Groceries within 4 tiles: fewer car trips. Earns coins.", tip: "When the shop is a short walk away, nobody needs the car for a pint of milk." },
+  { id: "market", name: "Farmers' market", kind: "machine", cat: "town", cost: 90, unlock: 1, carbon: 1, income: 4, cover: 3, nice: 3, desc: "Local food on market day. Earns coins.", tip: "Food grown nearby travels a short way to your plate." },
+  { id: "park", name: "Park", kind: "machine", cat: "town", cost: 40, unlock: 1, carbon: 0, absorb: 0.4, sink: 0.2, nice: 4, desc: "Trees, flowers and a bench. Cleans the air.", tip: "Green space near homes is good for body and mind." },
+  { id: "playground", name: "Playground", kind: "machine", cat: "town", cost: 50, unlock: 1, carbon: 2, nice: 4, desc: "Slide, swings and a sandpit.", tip: "Families stay in towns where children can play outside." },
+  { id: "fountain", name: "Fountain", kind: "machine", cat: "town", cost: 60, unlock: 1, carbon: 2, nice: 3, desc: "A cool place to sit on hot days.", tip: "Water and shade make squares pleasant in summer." },
+  { id: "library", name: "Library", kind: "machine", cat: "town", cost: 150, unlock: 2, carbon: 6, nice: 5, desc: "Books, homework help and a quiet room.", tip: "Shared spaces mean fewer things everyone has to buy." },
+  { id: "clinic", name: "Health clinic", kind: "machine", cat: "town", cost: 180, unlock: 2, carbon: 6, nice: 6, cover: 3, desc: "Doctors within walking distance.", tip: "Healthcare close to home is easier to reach without a car." },
 
   // Power
   { id: "coal", name: "Coal plant", kind: "machine", cat: "power", cost: 60, unlock: 1, carbon: 20, energy: 40, co2: 24, emit: 45, upkeep: 6, desc: "40 energy. Smoky, and burns 6 coins of coal a minute.", tip: "Cheap to build, but it pays for fuel forever and fills the air with smoke." },
@@ -73,8 +93,13 @@ export const PIECES: readonly PieceDef[] = [
   // Streets
   { id: "road", name: "Road", kind: "ground", cat: "streets", cost: 5, unlock: 1, carbon: 1, desc: "Cars drive here. Homes need a road or path nearby.", tip: "Every road invites more cars." },
   { id: "path", name: "Footpath", kind: "ground", cat: "streets", cost: 2, unlock: 1, carbon: 0.2, desc: "Connects homes for people on foot.", tip: "The cheapest, cleanest way to connect homes." },
+  { id: "plaza", name: "Plaza", kind: "ground", cat: "streets", cost: 4, unlock: 1, carbon: 0.5, desc: "Paved square for people on foot. Connects homes.", tip: "Car-free squares fill up with people." },
   { id: "bike", name: "Bike lane", kind: "ground", cat: "streets", cost: 5, unlock: 1, carbon: 0.4, cover: 2, desc: "Homes within 2 tiles cycle instead of driving.", tip: "A bike makes no fumes at all." },
   { id: "bus", name: "Bus stop", kind: "machine", cat: "streets", cost: 50, unlock: 2, carbon: 2, cover: 6, upkeep: 1, desc: "Homes within 6 tiles take the bus.", tip: "One bus can replace dozens of cars." },
+
+  { id: "bikedock", name: "Bike share", kind: "machine", cat: "streets", cost: 40, unlock: 1, carbon: 1, cover: 3, desc: "Shared bikes for homes within 3 tiles.", tip: "Shared bikes mean you don't need to own one." },
+  { id: "lamp", name: "Street lamp", kind: "machine", cat: "streets", cost: 6, unlock: 1, carbon: 0.5, energy: -0.2, nice: 1, desc: "Lights the street at night.", tip: "LED street lamps use a fraction of the energy of old bulbs." },
+  { id: "bench", name: "Bench", kind: "machine", cat: "streets", cost: 4, unlock: 1, carbon: 0.2, nice: 1, desc: "A place to sit.", tip: "Benches make walking easier for older people." },
 
   // Nature
   { id: "oak", name: "Oak tree", kind: "nature", cat: "nature", cost: 8, unlock: 1, carbon: 0, absorb: 0.6, sink: 0.36, nice: 2, desc: "Cleans the air and takes in carbon.", tip: "Trees are the cheapest air filter there is." },
@@ -99,6 +124,7 @@ export const pieceOrNull = (id: string) => BY_ID.get(id) ?? null;
 export const CATEGORIES: readonly { id: Category; name: string }[] = [
   { id: "homes", name: "Homes" },
   { id: "roofs", name: "Roofs" },
+  { id: "town", name: "Town" },
   { id: "power", name: "Power" },
   { id: "streets", name: "Streets" },
   { id: "nature", name: "Nature" },
