@@ -9,6 +9,8 @@ import { CHEST_CAP, N, PAVED, TH_UPGRADE, idx, inside, xy, type Town } from "./w
 import { WORLDS } from "./worlds";
 
 export const DAY_SECONDS = 240;
+/** Clean water from the Town Hall's old well. */
+const WELL = 15;
 /** Air steps per tick. */
 const AIR_SPEED = 4;
 
@@ -84,6 +86,8 @@ export interface Stats {
   /** Supply is today's, with the weather; `clean`/`dirty`/`cleanShare` are on an average day. */
   energy: { supply: number; demand: number; clean: number; dirty: number; cleanShare: number; average: number };
   food: { supply: number; demand: number; imported: number };
+  /** Safe drinking water: supply is the Town Hall's well plus filtered water. */
+  water: { supply: number; demand: number; raw: number; filterCap: number };
   /** Delivery trucks bringing in food the town doesn't grow. */
   trucks: number;
   weather: Weather;
@@ -125,11 +129,15 @@ export function analyze(t: Town, air: Float32Array): Stats {
   const bikeLane = new Uint8Array(N * N);
   const rails = new Uint8Array(N * N);
   let food = 0;
+  let raw = 0;
+  let filterCap = 0;
+  let hydroCap = 0;
   t.cols.forEach((c, i) => {
     if (PAVED.includes(c.g)) paved[i] = 1;
     if (c.g === "bike") bikeLane[i] = 1;
     if (c.g === "rail") rails[i] = 1;
     if (c.g === "field") food += piece("field").food!;
+    if (c.g === "reservoir") raw += piece("reservoir").water!;
   });
   const near = (i: number, r: number, mask: Uint8Array) => {
     const { x, y } = xy(i);
@@ -184,6 +192,9 @@ export function analyze(t: Town, air: Float32Array): Stats {
       if (p.solar) solarCap += p.solar;
       if (p.wind) windCap += p.wind;
       if (p.food) food += p.food;
+      if (p.water) raw += p.water;
+      if (p.filter) filterCap += p.filter;
+      if (p.hydro) hydroCap += p.hydro;
       if (p.co2) co2 += p.co2;
       if (p.upkeep) upkeep += p.upkeep;
       if (p.id === "station" && !near(i, 1, rails)) noRail.push(i);
@@ -196,9 +207,15 @@ export function analyze(t: Town, air: Float32Array): Stats {
   const demand = (housing ? (residents * insulSum) / housing : 0) + use;
   const weather = weatherAt(t.clock);
   const w = WEATHER[weather];
-  clean = solarCap + windCap;
+  clean = solarCap + windCap + hydroCap;
   const average = dirty + clean;
-  const supply = dirty + solarCap * w.solar + windCap * w.wind;
+  const wet = weather === "rain" || weather === "storm";
+  const supply = dirty + solarCap * w.solar + windCap * w.wind + hydroCap * (wet ? 1.1 : 1);
+
+  // Water: the Town Hall's old well, plus rain and river water collected and filtered.
+  const collected = raw * (weather === "sunny" ? 0.85 : wet ? 1.25 : 1);
+  const waterSupply = WELL + Math.min(collected, filterCap);
+  const waterDemand = residents * 0.5;
 
   // Food: what the farms grow, and what has to be trucked in.
   const foodDemand = residents * 0.5;
@@ -226,6 +243,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
   happiness += homes.length ? 20 * (niceHomes / homes.length) : 0;
   happiness += supply >= demand - 0.01 ? 10 : -25 * Math.min(1, (demand - supply) / Math.max(1, demand));
   happiness -= homeAir * 0.8;
+  if (waterDemand > waterSupply + 0.01) happiness -= 20 * Math.min(1, (waterDemand - waterSupply) / waterDemand);
   happiness = Math.max(5, Math.min(100, happiness));
 
   // Shops and cafés earn from residents within 6 tiles (full takings at 12 or more).
@@ -249,6 +267,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
     noRail,
     energy: { supply, demand, clean, dirty, cleanShare, average },
     food: { supply: food, demand: foodDemand, imported },
+    water: { supply: waterSupply, demand: waterDemand, raw: collected, filterCap },
     trucks: imported / 3,
     weather,
     travel: { covered, carShare, cars },
@@ -381,6 +400,11 @@ export function problem(t: Town, s: Stats): Tip | null {
   if (s.noRoof.length) return { tone: "warn", text: "A building needs a roof (or rooftop solar) before anyone can live in it.", at: s.noRoof[0] };
   if (s.noAccess.length) return { tone: "warn", text: "Nobody can reach that building. Lay a path, bike lane or road within 2 tiles.", at: s.noAccess[0] };
   if (s.noRail.length) return { tone: "warn", text: "That train station has no railway. Lay track next to it, then trains will run.", at: s.noRail[0] };
+  if (s.water.demand > s.water.supply + 0.01) {
+    if (s.water.raw > s.water.filterCap + 0.01)
+      return { tone: "warn", text: "There's water in your reservoirs, but it isn't safe to drink yet. Build a water filtration plant." };
+    return { tone: "warn", text: "Taps are running dry. Flood a reservoir or dam the river, then filter the water so it's safe to drink." };
+  }
   if (s.energy.demand > s.energy.average + 0.01) return { tone: "warn", text: "Not enough energy. Add solar panels or a wind turbine." };
   if (s.energy.demand > s.energy.supply + 0.01)
     return { tone: "warn", text: `The ${WEATHER[s.weather].label.toLowerCase()} weather is cutting your clean power. A mix of solar and wind keeps the lights on in any weather.` };

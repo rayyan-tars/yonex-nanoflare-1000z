@@ -18,6 +18,7 @@ const GROUND: Record<string, string> = {
   plaza: "#e4dccb",
   rail: "#7d6f60",
   field: "#d6ad4a",
+  reservoir: "#2c6fa8",
 };
 
 function colourOf(top: string): string {
@@ -25,6 +26,7 @@ function colourOf(top: string): string {
   if (p.id === "townhall") return "#ffffff";
   if (p.id === "coal") return "#2b2b2b";
   if (p.cat === "power") return "#2f6fd6";
+  if (p.cat === "water") return "#d8eef8";
   if (p.cat === "town" || p.id === "station") return "#f2b630";
   if (p.kind === "nature") return p.id === "rock" ? "#9ea3a6" : "#3d7a3a";
   if (p.cat === "farms") return "#7fbf3f";

@@ -1,6 +1,6 @@
 "use client";
 
-import { Cloud, CloudFog, CloudLightning, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
+import { Cloud, CloudFog, Drop, CloudLightning, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { WEATHER, airLabel, env, forecast, problem, type Weather } from "../model/sim";
@@ -112,6 +112,25 @@ export function Meters() {
             />
           </span>
           <small className="gh-meter__note">{cleanPct}% clean</small>
+        </span>
+      </div>
+      <div
+        className={`gh-meter ${s.water.supply >= s.water.demand - 0.01 ? "is-good" : "is-bad"}`}
+        title={`Town Hall well ${15}, plus ${fmt(Math.min(s.water.raw, s.water.filterCap))} filtered from reservoirs and dams (${fmt(s.water.raw)} collected, ${fmt(s.water.filterCap)} filtration capacity)`}
+      >
+        <span className="gh-meter__ico">
+          <Drop weight="fill" />
+        </span>
+        <span className="gh-meter__body">
+          <span className="gh-meter__top">
+            <span>Clean water</span>
+            <b>
+              {fmt(Math.floor(s.water.supply))}/{fmt(Math.ceil(s.water.demand - 0.01))}
+            </b>
+          </span>
+          <span className="gh-meter__bar">
+            <i className="gh-meter__clean gh-meter__water" style={{ width: `${s.water.demand ? Math.min(100, (s.water.supply / s.water.demand) * 100) : 100}%` }} />
+          </span>
         </span>
       </div>
       <div className={`gh-meter ${s.food.imported === 0 ? "is-good" : "is-warn"}`} title={s.food.imported > 0 ? `${fmt(s.food.imported)} food trucked in: costs coins and makes fumes` : "All food grown locally"}>

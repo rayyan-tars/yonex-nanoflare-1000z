@@ -1397,3 +1397,6 @@ button:focus-visible {
     display: none;
   }
 }
+.gh-meter__bar .gh-meter__water {
+  background: #3f8fd6;
+}

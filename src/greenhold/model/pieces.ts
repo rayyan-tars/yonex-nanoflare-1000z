@@ -8,7 +8,7 @@
  */
 
 export type PieceKind = "ground" | "block" | "roof" | "machine" | "nature";
-export type Category = "homes" | "roofs" | "town" | "power" | "streets" | "farms" | "nature";
+export type Category = "homes" | "roofs" | "town" | "power" | "water" | "streets" | "farms" | "nature";
 
 export interface PieceDef {
   id: string;
@@ -48,6 +48,14 @@ export interface PieceDef {
   income?: number;
   /** Food it grows (feeds two residents per unit). */
   food?: number;
+  /** Raw water it collects (must be filtered before people can drink it). */
+  water?: number;
+  /** Water a filtration plant can make safe to drink. */
+  filter?: number;
+  /** Steady clean energy from falling water. */
+  hydro?: number;
+  /** Built on rivers and lakes instead of land. */
+  onWater?: boolean;
   /** Can sit on top of a block, and counts as its roof. */
   rooftop?: boolean;
   /** Placed by the game: can't be bought or removed. */
@@ -91,6 +99,12 @@ export const PIECES: readonly PieceDef[] = [
   { id: "coal", name: "Coal plant", kind: "machine", cat: "power", cost: 60, unlock: 1, carbon: 20, energy: 40, co2: 24, emit: 45, upkeep: 6, desc: "40 energy. Smoky, and burns 6 coins of coal a minute.", tip: "Cheap to build, but it pays for fuel forever and fills the air with smoke." },
   { id: "solar", name: "Solar panels", kind: "machine", cat: "power", cost: 70, unlock: 1, carbon: 4, solar: 8, rooftop: true, desc: "8 clean energy. Free to run. Fits on rooftops too.", tip: "Sunlight is free and makes no smoke." },
   { id: "wind", name: "Wind turbine", kind: "machine", cat: "power", cost: 110, unlock: 1, carbon: 10, wind: 14, desc: "14 clean energy. Free to run.", tip: "Wind keeps blowing at night, when solar rests." },
+
+  // Water
+  { id: "reservoir", name: "Reservoir", kind: "ground", cat: "water", cost: 30, unlock: 1, carbon: 0.5, water: 5, absorb: 0.1, nice: 2, desc: "Floods a tile to store rainwater. Collects 5 water, more when it rains.", tip: "Storing rain in wet weather keeps taps running in dry spells." },
+  { id: "filtration", name: "Water filtration", kind: "machine", cat: "water", cost: 140, unlock: 1, carbon: 6, filter: 40, energy: -3, desc: "Cleans up to 40 water so it's safe to drink. Uses 3 energy.", tip: "River and lake water must be filtered and disinfected before anyone drinks it." },
+  { id: "dam", name: "Dam", kind: "machine", cat: "water", cost: 200, unlock: 1, carbon: 12, water: 20, onWater: true, desc: "Built across a river or lake. Stores 20 water.", tip: "Dams store lots of water, but they flood valleys and block fish swimming upstream. Fish ladders help." },
+  { id: "hydro", name: "Hydro power station", kind: "machine", cat: "water", cost: 240, unlock: 1, carbon: 10, hydro: 20, onWater: true, desc: "20 clean energy, day and night. Goes in the water next to a dam.", tip: "Falling water spins turbines with no smoke, whatever the wind and sun are doing." },
 
   // Streets
   { id: "road", name: "Road", kind: "ground", cat: "streets", cost: 5, unlock: 1, carbon: 1, desc: "Cars drive here. Homes need a road or path nearby.", tip: "Every road invites more cars." },
@@ -136,6 +150,7 @@ export const CATEGORIES: readonly { id: Category; name: string }[] = [
   { id: "roofs", name: "Roofs" },
   { id: "town", name: "Town" },
   { id: "power", name: "Power" },
+  { id: "water", name: "Water" },
   { id: "streets", name: "Streets" },
   { id: "farms", name: "Farms" },
   { id: "nature", name: "Nature" },

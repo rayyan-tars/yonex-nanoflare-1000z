@@ -241,3 +241,27 @@ describe("weather, farms and trains", () => {
     expect(s.energy.cleanShare).toBe(1);
   });
 });
+
+describe("water", () => {
+  it("reservoirs need filtering before people can drink the water", () => {
+    const t = village();
+    t.residents = 60;
+    const base = analyze(t, new Float32Array(N * N)).water;
+    for (let x = 30; x < 36; x++) build(t, x, 37, "reservoir");
+    expect(analyze(t, new Float32Array(N * N)).water.supply).toBe(base.supply);
+    build(t, 36, 36, "filtration");
+    expect(analyze(t, new Float32Array(N * N)).water.supply).toBeGreaterThan(base.supply);
+  });
+
+  it("dams go in water, and hydro power needs a dam beside it", () => {
+    const t = village();
+    const water = t.cols.findIndex((c, i) => c.g === "water" && t.cols[i + 1]?.g === "water" && t.cols[i + 2]?.g === "water");
+    expect(water).toBeGreaterThan(0);
+    expect(canPlace(t, idx(33, 35), "dam")).toMatchObject({ ok: false, reason: "Build it in a river or lake" });
+    expect(canPlace(t, water + 2, "hydro")).toMatchObject({ ok: false, reason: "Needs a dam right next to it" });
+    place(t, water, "dam");
+    place(t, water + 1, "hydro");
+    const s = analyze(t, new Float32Array(N * N));
+    expect(s.energy.clean).toBeGreaterThanOrEqual(20);
+  });
+});

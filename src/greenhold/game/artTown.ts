@@ -796,6 +796,146 @@ export function drawFarmsAndRail(art: Art) {
   art.vh.set("station", 0.9);
 }
 
+/** Water: reservoirs, dams, hydro power and filtration. */
+export function drawWater(art: Art) {
+  art.groundTile(
+    "g-reservoir",
+    (ctx) => {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 30, 15, 0, 0, Math.PI * 2);
+      const g = ctx.createRadialGradient(0, 2, 2, 0, 0, 28);
+      g.addColorStop(0, hex(0x2c6fa8));
+      g.addColorStop(1, hex(0x3f8fc8));
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.35)";
+      ctx.lineWidth = 0.8;
+      for (const r of [8, 15]) {
+        ctx.beginPath();
+        ctx.ellipse(-2, 1, r, r / 2, 0, 0.3, Math.PI - 0.3);
+        ctx.stroke();
+      }
+    },
+    0x7d9a6a,
+  );
+
+  art.obj("m-dam", 34, (ctx) => {
+    // Still water held back behind the wall.
+    poly(ctx, [P(-0.5, -0.5, 8), P(0.5, -0.5, 8), P(0.5, 0.05, 8), P(-0.5, 0.05, 8)], hex(0x2f78b4));
+    // The curved concrete wall.
+    prism(ctx, { x0: -0.52, x1: 0.52, y0: 0.05, y1: 0.22, z0: -2, z1: 12 }, 0xc8c4bb, { top: 0xdad6cc });
+    for (let k = 0; k < 5; k++) {
+      const gx = -0.4 + k * 0.2;
+      onFaceY(ctx, 0.22, gx - 0.02, gx + 0.02, -2, 12, "rgba(120,115,105,0.35)");
+    }
+    // Spillway: white water pouring down into the river below.
+    for (const gx of [-0.15, 0.15]) {
+      poly(ctx, [P(gx - 0.06, 0.22, 10), P(gx + 0.06, 0.22, 10), P(gx + 0.08, 0.4, -2), P(gx - 0.08, 0.4, -2)], "rgba(235,248,255,0.9)");
+      const f = P(gx, 0.42, -2);
+      blob(ctx, f.x, f.y, 3.5, 0xffffff, 1);
+      blob(ctx, f.x - 3, f.y + 1, 2.2, 0xe6f4fb, 1);
+    }
+    // Railing and a fish ladder at the side.
+    ctx.strokeStyle = "rgba(60,60,60,0.6)";
+    ctx.lineWidth = 0.6;
+    const a = P(-0.52, 0.22, 14);
+    const b = P(0.52, 0.22, 14);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    for (let k = 0; k < 4; k++) prism(ctx, { x0: 0.38, x1: 0.5, y0: 0.22 + k * 0.06, y1: 0.28 + k * 0.06, z0: -2, z1: 9 - k * 2.5 }, 0xb8b4aa);
+  });
+  art.vh.set("dam", 0.5);
+
+  art.obj("m-hydro", 50, (ctx) => {
+    prism(ctx, { x0: -0.36, x1: 0.36, y0: -0.3, y1: 0.2, z0: -2, z1: 4 }, 0xa8a49a);
+    prism(ctx, { x0: -0.3, x1: 0.3, y0: -0.26, y1: 0.12, z0: 4, z1: 22 }, 0xe8e2d6, { top: 0x7a8a96 });
+    for (let k = 0; k < 3; k++) onFaceY(ctx, 0.12, -0.22 + k * 0.17, -0.12 + k * 0.17, 9, 18, hex(0x8cc4dc));
+    onFaceX(ctx, 0.3, -0.18, 0.04, 8, 18, hex(0x7cb2c8));
+    // Lightning bolt sign.
+    const c = P(0, 0.12, 25);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 3.6, 0, Math.PI * 2);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(c.x + 0.6, c.y - 2.6);
+    ctx.lineTo(c.x - 1.4, c.y + 0.4);
+    ctx.lineTo(c.x + 0.2, c.y + 0.4);
+    ctx.lineTo(c.x - 0.6, c.y + 2.6);
+    ctx.lineTo(c.x + 1.6, c.y - 0.6);
+    ctx.lineTo(c.x, c.y - 0.6);
+    ctx.closePath();
+    ctx.fillStyle = "#f2b630";
+    ctx.fill();
+    // Water rushing out of the turbines.
+    for (const gx of [-0.2, 0, 0.2]) {
+      const f = P(gx, 0.3, -1);
+      blob(ctx, f.x, f.y, 2.6, 0xffffff, 1);
+      blob(ctx, f.x + 2, f.y + 2, 1.6, 0xe6f4fb, 1);
+    }
+    // Pylon carrying the power away.
+    const p = P(0.42, -0.38);
+    ctx.strokeStyle = "#5a6068";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(p.x - 3, p.y);
+    ctx.lineTo(p.x, p.y - 30);
+    ctx.lineTo(p.x + 3, p.y);
+    ctx.moveTo(p.x - 5, p.y - 24);
+    ctx.lineTo(p.x + 5, p.y - 24);
+    ctx.stroke();
+  });
+  art.obj("m-hydro-glow", 50, (ctx) => {
+    for (let k = 0; k < 3; k++) onFaceY(ctx, 0.12, -0.22 + k * 0.17, -0.12 + k * 0.17, 9, 18, WARM);
+  });
+  art.vh.set("hydro", 0.9);
+
+  art.obj("m-filtration", 40, (ctx) => {
+    prism(ctx, { x0: -0.46, x1: 0.46, y0: -0.46, y1: 0.46, z0: 0, z1: 1.5 }, 0xc9c1b2);
+    // Settling tanks.
+    for (const [gx, gy] of [
+      [-0.22, -0.2],
+      [0.18, -0.24],
+      [-0.2, 0.2],
+    ]) {
+      const p = P(gx, gy);
+      cylinder(ctx, p.x, p.y, 9, 1.5, 7, 0xb8b4aa, 0x5fb0de);
+      ctx.strokeStyle = "rgba(255,255,255,0.6)";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 7, p.y - 7);
+      ctx.lineTo(p.x + 7, p.y - 7);
+      ctx.stroke();
+    }
+    // Treatment building and pipes.
+    prism(ctx, { x0: 0.08, x1: 0.44, y0: 0.06, y1: 0.42, z0: 1.5, z1: 18 }, 0xdfe9ef, { top: 0x7a9fb5 });
+    onFaceY(ctx, 0.42, 0.14, 0.38, 6, 12, hex(0x8cc4dc));
+    ctx.strokeStyle = hex(0x3f7fd6);
+    ctx.lineWidth = 1.6;
+    const a = P(-0.2, 0.2, 5);
+    const b = P(0.08, 0.2, 5);
+    const c = P(0.18, -0.24, 5);
+    const d = P(0.18, 0.06, 5);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(c.x, c.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.stroke();
+    const drop = P(0.26, 0.42, 22);
+    ctx.beginPath();
+    ctx.moveTo(drop.x, drop.y - 4);
+    ctx.quadraticCurveTo(drop.x + 3, drop.y, drop.x, drop.y + 2);
+    ctx.quadraticCurveTo(drop.x - 3, drop.y, drop.x, drop.y - 4);
+    ctx.fillStyle = hex(0x3f8fd6);
+    ctx.fill();
+  });
+  art.obj("m-filtration-glow", 40, (ctx) => onFaceY(ctx, 0.42, 0.14, 0.38, 6, 12, WARM));
+  art.vh.set("filtration", 0.6);
+}
+
 function benchAt(ctx: Ctx, gx: number, gy: number) {
   prism(ctx, { x0: gx - 0.16, x1: gx + 0.16, y0: gy - 0.04, y1: gy + 0.04, z0: 3, z1: 4.2 }, 0x9a6b3f);
   prism(ctx, { x0: gx - 0.16, x1: gx + 0.16, y0: gy - 0.06, y1: gy - 0.04, z0: 4.2, z1: 8 }, 0x8a5b33);

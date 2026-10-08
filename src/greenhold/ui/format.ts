@@ -30,6 +30,10 @@ export const ECO_GRADE: Record<string, "A" | "B" | "C" | "D" | "E"> = {
   road: "C",
   concrete: "D",
   coal: "E",
+  reservoir: "A",
+  filtration: "A",
+  dam: "B",
+  hydro: "A",
   sunny: "B",
   rose: "B",
   sky: "B",
@@ -59,6 +63,9 @@ export function chips(p: PieceDef): { text: string; tone: "good" | "bad" | "info
   if (p.solar || p.wind) out.push({ text: `⚡ +${p.solar ?? p.wind} clean`, tone: "good" });
   if (p.energy && p.energy > 0) out.push({ text: `⚡ +${p.energy}`, tone: "info" });
   if (p.emit) out.push({ text: "Smoke", tone: "bad" });
+  if (p.hydro) out.push({ text: `⚡ +${p.hydro} clean`, tone: "good" });
+  if (p.water) out.push({ text: `💧 +${p.water}`, tone: "info" });
+  if (p.filter) out.push({ text: `💧 cleans ${p.filter}`, tone: "good" });
   if (p.cover) out.push({ text: "Fewer car trips", tone: "good" });
   if (p.nice && p.nice >= 3) out.push({ text: "Happier nearby", tone: "good" });
   if (p.absorb && p.absorb >= 0.2) out.push({ text: "Cleans air", tone: "good" });

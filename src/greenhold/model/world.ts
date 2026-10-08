@@ -10,7 +10,7 @@ export const idx = (x: number, y: number) => y * N + x;
 export const xy = (i: number) => ({ x: i % N, y: Math.floor(i / N) });
 export const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < N && y < N;
 
-export type Ground = "grass" | "sand" | "water" | "road" | "path" | "bike" | "plaza" | "rail" | "field";
+export type Ground = "grass" | "sand" | "water" | "road" | "path" | "bike" | "plaza" | "rail" | "field" | "reservoir";
 export const PAVED: readonly Ground[] = ["road", "path", "bike", "plaza"];
 
 export interface Column {
@@ -182,6 +182,10 @@ export function newTown(seed: number, now: number, world = 0): Town {
     ])
       set(x, y, "grass", ["wind"]);
     for (let y = 27; y <= 31; y++) for (let x = 14; x <= 15; x++) if (y !== 29) set(x, y, "grass", ["solar"]);
+    // The waterworks: a reservoir and two filtration plants.
+    for (let y = 34; y <= 37; y++) for (let x = 14; x <= 16; x++) set(x, y, "reservoir");
+    set(15, 33, "grass", ["filtration"]);
+    set(16, 33, "grass", ["filtration"]);
     for (let x = 13; x <= 18; x++) set(x, 29, "road");
     set(TOWN_HALL.x, TOWN_HALL.y, "grass", ["townhall"]);
     set(TOWN_HALL.x - 1, TOWN_HALL.y, "plaza");
@@ -226,6 +230,11 @@ export function newTown(seed: number, now: number, world = 0): Town {
     for (const x of [24, 25, 30, 31]) homes.push([x, 29, ["timber", "slate"]]);
     for (const y of [26, 27, 32, 33]) homes.push([35, y, ["brick", "brick", "roof"]]);
     for (const [x, y, s] of homes) set(x, y, "grass", s);
+    // A small waterworks.
+    set(18, 25, "reservoir");
+    set(19, 25, "reservoir");
+    set(18, 26, "reservoir");
+    set(20, 25, "grass", ["filtration"]);
     // Clean power is in place: a wind farm on the hill.
     for (const [x, y] of [
       [38, 22],
@@ -272,13 +281,24 @@ export function canPlace(t: Town, i: number, id: string): PlaceCheck {
   if (p.unlock > t.th) return { ok: false, reason: `Needs Town Hall ${p.unlock}` };
   const c = t.cols[i];
   if (!c) return { ok: false, reason: "Off the map" };
-  const why = placeRule(t, c, p, top(c));
+  const why = placeRule(t, c, p, top(c), i);
   if (why) return { ok: false, reason: why };
   if (t.coins < p.cost) return { ok: false, reason: "Not enough coins" };
   return { ok: true };
 }
 
-function placeRule(t: Town, c: Column, p: PieceDef, tp: PieceDef | null): string | null {
+function placeRule(t: Town, c: Column, p: PieceDef, tp: PieceDef | null, i: number): string | null {
+  if (p.onWater) {
+    if (tp) return "Something is already here";
+    if (c.g !== "water") return "Build it in a river or lake";
+    if (p.id === "hydro") {
+      const { x, y } = xy(i);
+      let dam = false;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy) && t.cols[idx(x + dx, y + dy)].s.includes("dam")) dam = true;
+      if (!dam) return "Needs a dam right next to it";
+    }
+    return null;
+  }
   switch (p.kind) {
     case "ground":
       if (c.s.length) return "Clear this spot first";
