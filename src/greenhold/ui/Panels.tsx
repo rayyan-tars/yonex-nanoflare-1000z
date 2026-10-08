@@ -157,12 +157,43 @@ export function WorldsPanel() {
   );
 }
 
+/** Every achievement in this world: done, next, and still to come. */
+export function GoalsPanel() {
+  const store = useGame();
+  const t = store.town;
+  const world = WORLDS[t.world];
+  return (
+    <Modal title={`Goals · ${world.name}`} onClose={() => store.openPanel(null)}>
+      <p className="gh-small gh-muted">{world.mission}</p>
+      <ol className="gh-goals">
+        {world.achievements.map((a, k) => {
+          const state = k < t.goal ? "done" : k === t.goal ? "now" : "later";
+          return (
+            <li key={a.id} className={`is-${state}`}>
+              {state === "done" ? <CheckCircle weight="fill" aria-label="done" /> : <Circle weight={state === "now" ? "fill" : "bold"} aria-label={state === "now" ? "current goal" : "to come"} />}
+              <span>
+                <b>{a.name}</b>
+                {state !== "done" && <small>{a.why}</small>}
+              </span>
+              <span className="gh-cost">{a.coins}</span>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="gh-small gh-muted">Goals unlock one at a time. Finish them all to open the next world.</p>
+    </Modal>
+  );
+}
+
 /** Shown when the last achievement in a world is earned. */
 export function CompletePanel() {
   const store = useGame();
   const t = store.town;
   const world = WORLDS[t.world];
-  const next = WORLDS[t.world + 1];
+  // The next world still to finish (usually the one after this).
+  const order = [...WORLDS.keys()].map((k) => (t.world + 1 + k) % WORLDS.length);
+  const nextIndex = order.find((k) => k !== t.world && !store.progress.done.includes(k) && k <= store.progress.unlocked);
+  const next = nextIndex !== undefined ? WORLDS[nextIndex] : undefined;
   const s = store.sim.stats;
   return (
     <Modal title="World complete!" onClose={() => store.openPanel(null)}>
@@ -188,7 +219,7 @@ export function CompletePanel() {
             <button type="button" className="gh-btn" onClick={() => store.openPanel(null)}>
               Keep building here
             </button>
-            <button type="button" className="gh-btn gh-btn--green gh-btn--big" onClick={() => store.playWorld(t.world + 1)}>
+            <button type="button" className="gh-btn gh-btn--green gh-btn--big" onClick={() => store.playWorld(nextIndex!)}>
               Go to {next.name}
             </button>
           </div>

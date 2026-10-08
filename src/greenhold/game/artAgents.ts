@@ -9,7 +9,7 @@ export type Dir = "xp" | "xn" | "yp" | "yn";
 export const DIRS: readonly Dir[] = ["xp", "xn", "yp", "yn"];
 
 export const CAR_TYPES = ["sedan-red", "sedan-blue", "sedan-white", "sedan-black", "hatch-silver", "hatch-green", "taxi", "van"] as const;
-export type CarType = (typeof CAR_TYPES)[number] | "bus";
+export type CarType = (typeof CAR_TYPES)[number] | "bus" | "truck" | "train";
 
 interface CarSpec {
   body: number;
@@ -24,6 +24,8 @@ interface CarSpec {
   taxi?: boolean;
   van?: boolean;
   bus?: boolean;
+  truck?: boolean;
+  train?: boolean;
 }
 
 const SPECS: Record<CarType, CarSpec> = {
@@ -36,6 +38,8 @@ const SPECS: Record<CarType, CarSpec> = {
   taxi: { body: 0xf2c230, len: 0.2, wid: 0.1, bodyZ: 5, roofZ: 9, cabin: [0.28, 0.72], taxi: true },
   van: { body: 0xf4f4f2, len: 0.22, wid: 0.11, bodyZ: 6, roofZ: 12, cabin: [0.02, 0.8], van: true },
   bus: { body: 0x2f9e5a, len: 0.38, wid: 0.12, bodyZ: 6, roofZ: 14, cabin: [0.02, 0.98], bus: true },
+  truck: { body: 0xd8dde2, len: 0.3, wid: 0.12, bodyZ: 6, roofZ: 15, cabin: [0.0, 0.7], truck: true },
+  train: { body: 0xe8ecef, len: 0.48, wid: 0.13, bodyZ: 6, roofZ: 15, cabin: [0.02, 0.98], bus: true, train: true },
 };
 
 /** A point on the car: `t` along it (0 back .. 1 front), `s` across (-1..1), at height z. */
@@ -88,10 +92,16 @@ function drawCar(ctx: Ctx, type: CarType, dir: Dir) {
   const shine = "rgba(190,225,245,0.55)";
   const zg0 = spec.bodyZ + 0.8;
   const zg1 = spec.roofZ - (spec.bus ? 1.6 : 1);
-  if (spec.bus) {
+  if (spec.train) {
+    for (let k = 0; k < 8; k++) sidePane(ctx, spec, dir, 0.06 + k * 0.112, 0.15 + k * 0.112, zg0, zg1, glass);
+    sidePane(ctx, spec, dir, 0.02, 0.98, spec.bodyZ - 1.6, spec.bodyZ - 0.4, hex(0x2f9e5a, 0.95));
+  } else if (spec.bus) {
     for (let k = 0; k < 6; k++) sidePane(ctx, spec, dir, 0.08 + k * 0.145, 0.2 + k * 0.145, zg0, zg1, glass);
     // Stripe and destination sign.
     sidePane(ctx, spec, dir, 0.02, 0.98, spec.bodyZ - 1.4, spec.bodyZ - 0.6, "rgba(255,255,255,0.75)");
+  } else if (spec.truck) {
+    sidePane(ctx, spec, dir, 0.05, 0.68, spec.bodyZ + 1, spec.roofZ - 1.5, hex(0xe0782f, 0.85));
+    sidePane(ctx, spec, dir, 0.78, 0.92, zg0, spec.bodyZ + 4, glass);
   } else if (spec.van) {
     sidePane(ctx, spec, dir, 0.62, 0.78, zg0, zg1, glass);
     sidePane(ctx, spec, dir, 0.05, 0.6, spec.bodyZ + 1.2, spec.bodyZ + 3.2, hex(0x2f9e5a, 0.9));
@@ -276,13 +286,21 @@ function drawCyclist(ctx: Ctx, look: Look, frame: 0 | 1) {
 }
 
 export function drawAgents(art: Art) {
-  for (const type of [...CAR_TYPES, "bus"] as CarType[])
-    for (const dir of DIRS) art.obj(`v-${type}-${dir}`, 26, (ctx) => drawCar(ctx, type, dir), type === "bus" ? 1.3 : 1);
+  for (const type of [...CAR_TYPES, "bus", "truck", "train"] as CarType[])
+    for (const dir of DIRS) art.obj(`v-${type}-${dir}`, 26, (ctx) => drawCar(ctx, type, dir), type === "bus" || type === "train" ? 1.4 : 1);
   LOOKS.forEach((look, i) => {
     for (const f of [0, 1] as const) {
       art.bake(`p-${i}-${f}`, 14, 20, 7, 17, (ctx) => drawPerson(ctx, look, f));
       if (!look.kid) art.bake(`c-${i}-${f}`, 16, 20, 8, 17, (ctx) => drawCyclist(ctx, look, f));
     }
+  });
+  // Rain and cloud shadows.
+  art.bake("fx-rain", 2, 16, 1, 0, (ctx) => {
+    const g = ctx.createLinearGradient(0, 0, 0, 16);
+    g.addColorStop(0, "rgba(220,235,255,0)");
+    g.addColorStop(1, "rgba(220,235,255,0.85)");
+    ctx.fillStyle = g;
+    ctx.fillRect(-0.5, 0, 1, 16);
   });
   // Car headlights at night.
   art.bake("fx-beam", 30, 16, 15, 8, (ctx) => {

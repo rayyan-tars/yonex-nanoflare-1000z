@@ -601,6 +601,201 @@ export function drawTown(art: Art) {
   );
 }
 
+/** Farms, railways and stations. */
+export function drawFarmsAndRail(art: Art) {
+  // Railway: ballast with sleepers and rails along each connected direction (bit 1 = +x, 2 = −x, 4 = +y, 8 = −y).
+  for (let m = 0; m < 16; m++)
+    art.groundTile(
+      `g-rail-${m}`,
+      (ctx) => {
+        const r = rand(13);
+        for (let k = 0; k < 30; k++) {
+          const p = P(r() - 0.5, r() - 0.5);
+          ctx.fillStyle = hex(r() < 0.5 ? 0x8a8070 : 0xb0a594, 0.8);
+          ctx.fillRect(p.x, p.y, 1.2, 0.9);
+        }
+        const dirs: [number, number, number][] = [
+          [1, 1, 0],
+          [2, -1, 0],
+          [4, 0, 1],
+          [8, 0, -1],
+        ];
+        let conn = dirs.filter(([bit]) => m & bit);
+        if (!conn.length) conn = [dirs[0], dirs[1]];
+        for (const [, dx, dy] of conn) {
+          // Sleepers.
+          for (let k = 0; k <= 4; k++) {
+            const t = k * 0.12;
+            const cx = dx * t;
+            const cy = dy * t;
+            const a = P(cx - dy * 0.2, cy + dx * 0.2);
+            const b = P(cx + dy * 0.2, cy - dx * 0.2);
+            ctx.strokeStyle = hex(0x6b4a2e);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+          // Rails.
+          ctx.strokeStyle = hex(0x9aa3ab);
+          ctx.lineWidth = 1;
+          for (const side of [-0.12, 0.12]) {
+            const a = P(-dy * side, dx * side);
+            const b = P(dx * 0.5 - dy * side, dy * 0.5 + dx * side);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      },
+      0xa39885,
+    );
+
+  // Crop fields in three stages: sprouting, growing, ripe.
+  const crops = [
+    { soil: 0x8a6242, plant: 0x7fc456, h: 1.2 },
+    { soil: 0x86603f, plant: 0x5fae3e, h: 3 },
+    { soil: 0x8a6a40, plant: 0xe2b84a, h: 4.5 },
+  ];
+  crops.forEach((c, stage) =>
+    art.groundTile(
+      `g-field-${stage}`,
+      (ctx) => {
+        for (let k = -4; k <= 4; k++) {
+          const a = P(-0.5, k * 0.11);
+          const b = P(0.5, k * 0.11);
+          ctx.strokeStyle = hex(shade(c.soil, 0.75));
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          for (let j = 0; j < 9; j++) {
+            const p = P(-0.45 + j * 0.11, k * 0.11 - 0.03);
+            ctx.strokeStyle = hex(c.plant);
+            ctx.lineWidth = stage === 2 ? 1.1 : 0.9;
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p.x + 0.4, p.y - c.h);
+            ctx.stroke();
+            if (stage === 2) blob(ctx, p.x + 0.4, p.y - c.h, 0.7, 0xf2d070, 1.1);
+          }
+        }
+      },
+      c.soil,
+    ),
+  );
+
+  art.obj("n-orchard", 40, (ctx) => {
+    for (const [gx, gy] of [
+      [-0.25, -0.2],
+      [0.2, -0.25],
+      [-0.2, 0.22],
+      [0.22, 0.2],
+    ]) {
+      const p = P(gx, gy);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 1, 6, 2.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(30,60,20,0.2)";
+      ctx.fill();
+      ctx.fillStyle = "#7a5232";
+      ctx.fillRect(p.x - 1, p.y - 9, 2, 9);
+      blob(ctx, p.x, p.y - 13, 6.5, 0x6aae4c);
+      const r = rand(Math.round((gx + 1) * 10 + (gy + 1) * 3));
+      for (let k = 0; k < 5; k++) blob(ctx, p.x + (r() - 0.5) * 9, p.y - 13 + (r() - 0.5) * 8, 1.1, k % 2 ? 0xe0533a : 0xf2a530, 1.1);
+    }
+  });
+  art.vh.set("orchard", 0.9);
+
+  art.obj("m-beehives", 22, (ctx) => {
+    for (const [gx, gy, col] of [
+      [-0.2, -0.1, 0xf2d27a],
+      [0.05, 0.1, 0xefe6d0],
+      [0.28, -0.12, 0xa9cbe6],
+    ] as [number, number, number][]) {
+      prism(ctx, { x0: gx - 0.08, x1: gx + 0.08, y0: gy - 0.08, y1: gy + 0.08, z0: 1, z1: 7 }, col);
+      prism(ctx, { x0: gx - 0.09, x1: gx + 0.09, y0: gy - 0.09, y1: gy + 0.09, z0: 7, z1: 8.5 }, 0x8a6a52);
+    }
+    const r = rand(5);
+    for (let k = 0; k < 8; k++) {
+      const p = P(r() * 0.8 - 0.4, r() * 0.8 - 0.4, 10 + r() * 6);
+      ctx.fillStyle = "#f2b630";
+      ctx.fillRect(p.x, p.y, 1.2, 0.9);
+    }
+    const r2 = rand(9);
+    for (let k = 0; k < 10; k++) {
+      const p = P(r2() * 0.9 - 0.45, r2() * 0.9 - 0.45);
+      blob(ctx, p.x, p.y - 2, 1, [0xb08ff2, 0xf2d04a, 0xffffff][k % 3], 1.05);
+    }
+  });
+  art.vh.set("beehives", 0.4);
+
+  art.obj("m-greenhouse", 40, (ctx) => {
+    const b = { x0: -0.44, x1: 0.44, y0: -0.36, y1: 0.36, z0: 0, z1: 14 };
+    prism(ctx, { ...b, z1: 2 }, 0xd8d0c0);
+    // Glass walls with plants inside.
+    for (let k = 0; k < 6; k++) {
+      const p = P(-0.38 + k * 0.15, 0.2, 2);
+      blob(ctx, p.x, p.y - 3, 2.6, k % 2 ? 0x5fae3e : 0x7fc456);
+      blob(ctx, p.x + 1, p.y - 4, 0.9, 0xe0533a, 1.1);
+    }
+    ctx.globalAlpha = 0.45;
+    prism(ctx, { ...b, z0: 2 }, 0xcfeaf3, { flatTop: false });
+    ctx.globalAlpha = 1;
+    // Pitched glass roof.
+    const ridge = [P(-0.44, 0, 22), P(0.44, 0, 22)];
+    poly(ctx, [P(-0.44, 0.36, 14), P(0.44, 0.36, 14), ridge[1], ridge[0]], "rgba(200,232,242,0.7)", EDGE);
+    poly(ctx, [P(0.44, 0.36, 14), P(0.44, -0.36, 14), ridge[1]], "rgba(170,210,225,0.7)", EDGE);
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = 0.6;
+    for (let k = 0; k <= 6; k++) {
+      const a = P(-0.44 + k * 0.147, 0.36, 14);
+      const c = P(-0.44 + k * 0.147, 0, 22);
+      const d = P(-0.44 + k * 0.147, 0.36, 2);
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(a.x, a.y);
+      ctx.lineTo(c.x, c.y);
+      ctx.stroke();
+    }
+  });
+  art.obj("m-greenhouse-glow", 40, (ctx) => {
+    ctx.globalAlpha = 0.5;
+    poly(ctx, [P(-0.44, 0.36, 2), P(0.44, 0.36, 2), P(0.44, 0.36, 14), P(-0.44, 0.36, 14)], "#ff9ad8");
+    poly(ctx, [P(0.44, 0.36, 2), P(0.44, -0.36, 2), P(0.44, -0.36, 14), P(0.44, 0.36, 14)], "#e080c8");
+  });
+  art.vh.set("greenhouse", 0.8);
+
+  art.obj("m-station", 44, (ctx) => {
+    prism(ctx, { x0: -0.48, x1: 0.48, y0: -0.48, y1: 0.0, z0: 0, z1: 4 }, 0xc9c1b2, { top: 0xd8d0c0 });
+    prism(ctx, { x0: -0.4, x1: 0.1, y0: -0.46, y1: -0.16, z0: 4, z1: 20 }, 0xb35a40, { top: 0x8a4a36 });
+    onFaceY(ctx, -0.16, -0.36, -0.04, 8, 16, hex(0x9cd0e6));
+    onFaceX(ctx, 0.1, -0.42, -0.2, 8, 16, hex(0x8cc0d6));
+    // Platform canopy on posts.
+    for (const gx of [-0.3, 0.05, 0.4]) prism(ctx, { x0: gx - 0.02, x1: gx + 0.02, y0: -0.06, y1: -0.02, z0: 4, z1: 20 }, 0x3a4048);
+    prism(ctx, { x0: -0.48, x1: 0.48, y0: -0.14, y1: 0.06, z0: 20, z1: 22 }, 0x2f9e5a);
+    // Clock and sign.
+    const c = P(0.3, -0.04, 17);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.strokeStyle = "#333";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    sign(ctx, P(-0.15, -0.31, 28), "STATION", "#2c4a7a", "#fff", 4.2);
+    sitter(ctx, P(-0.1, -0.02, 4), "#e05a47");
+    sitter(ctx, P(0.2, -0.04, 4), "#3f7fd6", "#8d5a3b");
+  });
+  art.obj("m-station-glow", 44, (ctx) => {
+    onFaceY(ctx, -0.16, -0.36, -0.04, 8, 16, WARM);
+    onFaceX(ctx, 0.1, -0.42, -0.2, 8, 16, WARM);
+  });
+  art.vh.set("station", 0.9);
+}
+
 function benchAt(ctx: Ctx, gx: number, gy: number) {
   prism(ctx, { x0: gx - 0.16, x1: gx + 0.16, y0: gy - 0.04, y1: gy + 0.04, z0: 3, z1: 4.2 }, 0x9a6b3f);
   prism(ctx, { x0: gx - 0.16, x1: gx + 0.16, y0: gy - 0.06, y1: gy - 0.04, z0: 4.2, z1: 8 }, 0x8a5b33);

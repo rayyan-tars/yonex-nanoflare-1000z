@@ -192,3 +192,52 @@ describe("worlds", () => {
     expect(analyze(t, new Float32Array(N * N)).income).toBeGreaterThan(before);
   });
 });
+
+describe("weather, farms and trains", () => {
+  it("weather changes clean power but not the eco star", () => {
+    const t = village();
+    build(t, 34, 34, "solar");
+    build(t, 36, 34, "wind");
+    const kinds = new Set<string>();
+    const supply: Record<string, number> = {};
+    for (let c = 0; c < 4000; c += 7) {
+      t.clock = c;
+      const s = analyze(t, new Float32Array(N * N));
+      kinds.add(s.weather);
+      supply[s.weather] = s.energy.supply;
+      expect(s.energy.average).toBe(analyze(t, new Float32Array(N * N)).energy.average);
+    }
+    expect(kinds.size).toBeGreaterThanOrEqual(3);
+    expect(new Set(Object.values(supply)).size).toBeGreaterThan(1);
+  });
+
+  it("crop fields cut the food trucked in", () => {
+    const t = village();
+    const before = analyze(t, new Float32Array(N * N)).food;
+    expect(before.imported).toBeGreaterThan(0);
+    for (let x = 30; x < 35; x++) build(t, x, 37, "field");
+    const after = analyze(t, new Float32Array(N * N)).food;
+    expect(after.imported).toBeLessThan(before.imported);
+  });
+
+  it("a station needs railway next to it before it takes cars off the road", () => {
+    const t = village();
+    build(t, 30, 35, "station");
+    let s = analyze(t, new Float32Array(N * N));
+    expect(s.noRail).toContain(idx(30, 35));
+    const cars = s.travel.carShare;
+    for (let x = 28; x <= 33; x++) build(t, x, 36, "rail");
+    s = analyze(t, new Float32Array(N * N));
+    expect(s.noRail).toEqual([]);
+    expect(s.travel.carShare).toBeLessThan(cars);
+  });
+
+  it("Golden Plains starts by trucking in its food", () => {
+    const t = newTown(2, 0, 3);
+    t.residents = analyze(t, new Float32Array(N * N)).housing;
+    const s = analyze(t, new Float32Array(N * N));
+    expect(s.food.imported).toBeGreaterThan(0);
+    expect(s.noAccess).toEqual([]);
+    expect(s.energy.cleanShare).toBe(1);
+  });
+});

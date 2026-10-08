@@ -8,7 +8,7 @@
  */
 
 export type PieceKind = "ground" | "block" | "roof" | "machine" | "nature";
-export type Category = "homes" | "roofs" | "town" | "power" | "streets" | "nature";
+export type Category = "homes" | "roofs" | "town" | "power" | "streets" | "farms" | "nature";
 
 export interface PieceDef {
   id: string;
@@ -46,6 +46,8 @@ export interface PieceDef {
   nice?: number;
   /** Coins per minute it earns when plenty of residents live within 6 tiles. */
   income?: number;
+  /** Food it grows (feeds two residents per unit). */
+  food?: number;
   /** Can sit on top of a block, and counts as its roof. */
   rooftop?: boolean;
   /** Placed by the game: can't be bought or removed. */
@@ -94,12 +96,20 @@ export const PIECES: readonly PieceDef[] = [
   { id: "road", name: "Road", kind: "ground", cat: "streets", cost: 5, unlock: 1, carbon: 1, desc: "Cars drive here. Homes need a road or path nearby.", tip: "Every road invites more cars." },
   { id: "path", name: "Footpath", kind: "ground", cat: "streets", cost: 2, unlock: 1, carbon: 0.2, desc: "Connects homes for people on foot.", tip: "The cheapest, cleanest way to connect homes." },
   { id: "plaza", name: "Plaza", kind: "ground", cat: "streets", cost: 4, unlock: 1, carbon: 0.5, desc: "Paved square for people on foot. Connects homes.", tip: "Car-free squares fill up with people." },
+  { id: "rail", name: "Railway", kind: "ground", cat: "streets", cost: 8, unlock: 1, carbon: 1, desc: "Track for electric trains. Join it up past a station.", tip: "Trains carry hundreds of people on a strip of land narrower than a road." },
+  { id: "station", name: "Train station", kind: "machine", cat: "streets", cost: 150, unlock: 1, carbon: 6, cover: 8, energy: -2, nice: 1, desc: "Homes within 8 tiles take the train. Needs railway next to it.", tip: "Electric trains run on clean power and take cars off the road." },
   { id: "bike", name: "Bike lane", kind: "ground", cat: "streets", cost: 5, unlock: 1, carbon: 0.4, cover: 2, desc: "Homes within 2 tiles cycle instead of driving.", tip: "A bike makes no fumes at all." },
   { id: "bus", name: "Bus stop", kind: "machine", cat: "streets", cost: 50, unlock: 2, carbon: 2, cover: 6, upkeep: 1, desc: "Homes within 6 tiles take the bus.", tip: "One bus can replace dozens of cars." },
 
   { id: "bikedock", name: "Bike share", kind: "machine", cat: "streets", cost: 40, unlock: 1, carbon: 1, cover: 3, desc: "Shared bikes for homes within 3 tiles.", tip: "Shared bikes mean you don't need to own one." },
   { id: "lamp", name: "Street lamp", kind: "machine", cat: "streets", cost: 6, unlock: 1, carbon: 0.5, energy: -0.2, nice: 1, desc: "Lights the street at night.", tip: "LED street lamps use a fraction of the energy of old bulbs." },
   { id: "bench", name: "Bench", kind: "machine", cat: "streets", cost: 4, unlock: 1, carbon: 0.2, nice: 1, desc: "A place to sit.", tip: "Benches make walking easier for older people." },
+
+  // Farms: food grown here doesn't need trucking in.
+  { id: "field", name: "Crop field", kind: "ground", cat: "farms", cost: 15, unlock: 1, carbon: 0, food: 3, sink: 0.05, desc: "Wheat and vegetables that grow through the seasons. Feeds 6.", tip: "Food grown nearby doesn't need trucks driving it in." },
+  { id: "orchard", name: "Orchard", kind: "nature", cat: "farms", cost: 20, unlock: 1, carbon: 0, food: 1.5, absorb: 0.5, sink: 0.3, nice: 2, desc: "Fruit trees: food, shade and cleaner air.", tip: "Fruit trees feed people and take in carbon at the same time." },
+  { id: "beehives", name: "Beehives", kind: "machine", cat: "farms", cost: 25, unlock: 1, carbon: 0.5, food: 1, nice: 1, desc: "Honey, and bees to pollinate the crops.", tip: "About a third of the food we eat depends on pollinators like bees." },
+  { id: "greenhouse", name: "Greenhouse", kind: "machine", cat: "farms", cost: 90, unlock: 2, carbon: 4, food: 6, energy: -2, desc: "Grows food all year. Feeds 12. Uses a little energy.", tip: "Greenhouses grow a lot of food on a little land." },
 
   // Nature
   { id: "oak", name: "Oak tree", kind: "nature", cat: "nature", cost: 8, unlock: 1, carbon: 0, absorb: 0.6, sink: 0.36, nice: 2, desc: "Cleans the air and takes in carbon.", tip: "Trees are the cheapest air filter there is." },
@@ -127,6 +137,7 @@ export const CATEGORIES: readonly { id: Category; name: string }[] = [
   { id: "town", name: "Town" },
   { id: "power", name: "Power" },
   { id: "streets", name: "Streets" },
+  { id: "farms", name: "Farms" },
   { id: "nature", name: "Nature" },
 ];
 

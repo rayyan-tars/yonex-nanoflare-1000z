@@ -19,7 +19,8 @@ function previews(scene: Phaser.Scene) {
   const out: Record<string, string> = {};
   for (const p of PIECES) {
     if (p.unlock >= 99) continue;
-    const key = p.kind === "ground" ? (p.id === "road" ? "g-road-3" : p.id === "grass" ? "g-grass-0" : `g-${p.id}`) : texFor(p);
+    const ground: Record<string, string> = { road: "g-road-3", rail: "g-rail-3", grass: "g-grass-0", field: "g-field-2" };
+    const key = p.kind === "ground" ? (ground[p.id] ?? `g-${p.id}`) : texFor(p);
     const src = scene.textures.get(key).getSourceImage() as HTMLCanvasElement;
     if (src && typeof src.toDataURL === "function") out[p.id] = src.toDataURL();
   }
@@ -41,7 +42,7 @@ interface Agent {
   to: number;
   t: number;
   speed: number;
-  kind: "car" | "bus" | "walker" | "bike";
+  kind: "car" | "bus" | "walker" | "bike" | "train" | "truck";
   /** Car type, or which person it is. */
   look: string | number;
   /** Walking animation. */
@@ -69,7 +70,9 @@ const pick = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
 const dirOf = (dx: number, dy: number): Dir => (dx > 0 ? "xp" : dx < 0 ? "xn" : dy > 0 ? "yp" : "yn");
 
 const colDepth = (x: number, y: number) => (x + y) * 40 + 1000;
-const groundKey = (g: string, x: number, y: number) => (g === "road" ? "g-road-0" : g === "grass" ? `g-grass-${(x * 7 + y * 13) % 3}` : g === "water" ? `g-water-${(x + y) % 3}` : `g-${g}`);
+/** Crops grow through three stages; fields nearby are a little out of step. */
+const fieldStage = (clock: number, x: number, y: number) => Math.floor(clock / 70 + ((x * 3 + y * 5) % 4) * 0.15) % 3;
+const groundKey = (g: string, x: number, y: number) => (g === "road" ? "g-road-0" : g === "rail" ? "g-rail-0" : g === "field" ? "g-field-0" : g === "grass" ? `g-grass-${(x * 7 + y * 13) % 3}` : g === "water" ? `g-water-${(x + y) % 3}` : `g-${g}`);
 export const texFor = (p: PieceDef) => (p.kind === "block" ? `b-${p.id}` : p.kind === "roof" ? `r-${p.id}` : p.kind === "nature" ? `n-${p.id}` : `m-${p.id}`);
 
 export class WorldScene extends Phaser.Scene {
@@ -91,6 +94,13 @@ export class WorldScene extends Phaser.Scene {
   private walkTiles: number[] = [];
   private bikeTiles: number[] = [];
   private busyTiles: number[] = [];
+  private railTiles: number[] = [];
+  private edgeRoads: number[] = [];
+  /** Falling rain, lightning and cloud shadows. */
+  private rain: Phaser.GameObjects.Image[] = [];
+  private clouds: Phaser.GameObjects.Image[] = [];
+  private flash!: Phaser.GameObjects.Rectangle;
+  private nextFlash = 0;
   private smog: { img: Phaser.GameObjects.Image; target: number; i: number }[] = [];
   private coinBubble!: Phaser.GameObjects.Image;
   private badges: Phaser.GameObjects.Image[] = [];
@@ -134,6 +144,16 @@ export class WorldScene extends Phaser.Scene {
       this.subscribe();
       this.syncSlow(true);
       this.ready = true;
+      // The four corners of the view, as map tiles (fractional).
+      this.store.viewTiles = () => {
+        const v = this.cameras.main.worldView;
+        return [
+          [v.x, v.y],
+          [v.right, v.y],
+          [v.right, v.bottom],
+          [v.x, v.bottom],
+        ].map(([wx, wy]) => ({ x: (wy / 16 + wx / 32) / 2, y: (wy / 16 - wx / 32) / 2 }));
+      };
       this.store.screenOf = (i) => {
         const { x, y } = xy(i);
         const p = P(x, y);
@@ -172,6 +192,12 @@ export class WorldScene extends Phaser.Scene {
       this.put("edge-right", r.x, r.y, GROUND_DEPTH - 10);
     }
     this.haze = this.add.rectangle(0, 0, 10, 10, 0x8a7653).setOrigin(0).setDepth(SMOG_DEPTH + 5).setAlpha(0);
+    this.flash = this.add.rectangle(0, 0, 10, 10, 0xffffff).setOrigin(0).setDepth(SMOG_DEPTH + 7).setAlpha(0);
+    for (let k = 0; k < 170; k++) this.rain.push(this.add.image(0, 0, "fx-rain").setScale(1 / RES).setDepth(SMOG_DEPTH + 6).setAlpha(0.55).setVisible(false).setRotation(0.25));
+    for (let k = 0; k < 7; k++) {
+      const p = P(Math.random() * N, Math.random() * N);
+      this.clouds.push(this.add.image(p.x, p.y - 60, "fx-smog").setScale(5 / RES, 3 / RES).setTint(0x2a3440).setDepth(SMOG_DEPTH + 1).setAlpha(0));
+    }
     this.bars = this.add.graphics().setDepth(UI_DEPTH + 10);
     this.ring = this.put("fx-ring", 0, 0, OVERLAY_DEPTH + 1).setVisible(false);
     this.selRing = this.put("fx-ring", 0, 0, OVERLAY_DEPTH + 2).setVisible(false).setTint(0xffe28a);
@@ -204,11 +230,12 @@ export class WorldScene extends Phaser.Scene {
   private refreshGround(i: number) {
     const { x, y } = xy(i);
     const g = this.store.town.cols[i].g;
-    if (g === "road") {
-      const r = (dx: number, dy: number) => inside(x + dx, y + dy) && this.store.town.cols[idx(x + dx, y + dy)].g === "road";
+    if (g === "road" || g === "rail") {
+      const r = (dx: number, dy: number) => inside(x + dx, y + dy) && this.store.town.cols[idx(x + dx, y + dy)].g === g;
       const m = (r(1, 0) ? 1 : 0) | (r(-1, 0) ? 2 : 0) | (r(0, 1) ? 4 : 0) | (r(0, -1) ? 8 : 0);
-      this.ground[i].setTexture(`g-road-${m}`);
-    } else this.ground[i].setTexture(groundKey(g, x, y));
+      this.ground[i].setTexture(`g-${g}-${m}`);
+    } else if (g === "field") this.ground[i].setTexture(`g-field-${fieldStage(this.store.town.clock, x, y)}`);
+    else this.ground[i].setTexture(groundKey(g, x, y));
   }
 
   private levelY(x: number, y: number, level: number) {
@@ -672,9 +699,12 @@ export class WorldScene extends Phaser.Scene {
     this.walkTiles = [];
     this.bikeTiles = [];
     this.busyTiles = [];
+    this.railTiles = [];
+    this.edgeRoads = [];
     const spots: number[] = [];
     t.cols.forEach((c, i) => {
       if (c.g === "road") this.roads.push(i);
+      if (c.g === "rail") this.railTiles.push(i);
       if (PAVED.includes(c.g)) this.walkTiles.push(i);
       if (c.g === "bike") this.bikeTiles.push(i);
       if (c.s.some((id) => DESTINATIONS.includes(id)) || c.g === "plaza") spots.push(i);
@@ -686,6 +716,11 @@ export class WorldScene extends Phaser.Scene {
         const b = xy(sp);
         return Math.abs(a.x - b.x) <= 3 && Math.abs(a.y - b.y) <= 3;
       });
+    });
+    // Delivery trucks arrive from roads near the edge of the map.
+    this.edgeRoads = this.roads.filter((r) => {
+      const p = xy(r);
+      return Math.min(p.x, p.y, N - 1 - p.x, N - 1 - p.y) <= 12;
     });
     // Vehicles on tiles that are no longer roads leave.
     this.agents = this.agents.filter((a) => {
@@ -702,7 +737,8 @@ export class WorldScene extends Phaser.Scene {
 
   private tileOk(a: Agent, i: number) {
     const g = this.store.town.cols[i].g;
-    if (a.kind === "car" || a.kind === "bus") return g === "road";
+    if (a.kind === "car" || a.kind === "bus" || a.kind === "truck") return g === "road";
+    if (a.kind === "train") return g === "rail";
     if (a.kind === "bike") return g === "bike";
     return PAVED.includes(g);
   }
@@ -723,19 +759,19 @@ export class WorldScene extends Phaser.Scene {
 
   private textureFor(a: Agent, dx: number, dy: number) {
     if (a.kind === "car") return `v-${a.look}-${dirOf(dx, dy)}`;
-    if (a.kind === "bus") return `v-bus-${dirOf(dx, dy)}`;
+    if (a.kind === "bus" || a.kind === "truck" || a.kind === "train") return `v-${a.kind}-${dirOf(dx, dy)}`;
     if (a.kind === "bike") return `c-${a.look}-${a.frame}`;
     return `p-${a.look}-${a.frame}`;
   }
 
   private spawn(kind: Agent["kind"], at: number, kid = false) {
-    const look: string | number = kind === "car" ? pick(CAR_TYPES) : kind === "bus" ? "bus" : kid ? pick(KIDS) : pick(ADULTS);
+    const look: string | number = kind === "car" ? pick(CAR_TYPES) : kind === "bus" || kind === "truck" || kind === "train" ? kind : kid ? pick(KIDS) : pick(ADULTS);
     const a: Agent = {
       img: null as unknown as Phaser.GameObjects.Image,
       from: at,
       to: at,
       t: 1,
-      speed: kind === "walker" ? (kid ? 0.75 : 0.5 + Math.random() * 0.3) : kind === "bike" ? 1.3 : kind === "bus" ? 1.1 : 1.5 + Math.random() * 0.6,
+      speed: kind === "walker" ? (kid ? 0.75 : 0.5 + Math.random() * 0.3) : kind === "bike" ? 1.3 : kind === "bus" || kind === "truck" ? 1.1 : kind === "train" ? 1.8 : 1.5 + Math.random() * 0.6,
       kind,
       look,
       step: Math.random(),
@@ -744,7 +780,7 @@ export class WorldScene extends Phaser.Scene {
       puff: Math.random() * 1000,
     };
     a.img = this.put(this.textureFor(a, 1, 0), 0, 0, 0);
-    if (kind === "car" || kind === "bus") a.light = this.add.image(0, 0, "fx-beam").setScale(1 / RES).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
+    if (kind === "car" || kind === "bus" || kind === "truck" || kind === "train") a.light = this.add.image(0, 0, "fx-beam").setScale(1 / RES).setBlendMode(Phaser.BlendModes.ADD).setAlpha(0);
     this.agents.push(a);
     return a;
   }
@@ -788,11 +824,13 @@ export class WorldScene extends Phaser.Scene {
       bus: this.roads.length >= 2 && t.cols.some((c) => c.s.includes("bus")) ? Math.min(4, 1 + Math.floor(t.residents / 40)) : 0,
       walker: this.walkTiles.length ? Math.round(Math.min(70, 4 + t.residents / 2) * day) : 0,
       bike: this.bikeTiles.length >= 2 ? Math.min(18, Math.round((t.residents * stats.travel.covered) / 4)) : 0,
+      train: this.railTiles.length >= 4 && t.cols.some((c) => c.s.includes("station")) ? Math.min(3, Math.ceil(this.railTiles.length / 14)) : 0,
+      truck: this.roads.length >= 2 ? Math.min(10, Math.round(stats.trucks)) : 0,
     };
-    const have = { car: 0, bus: 0, walker: 0, bike: 0 };
+    const have = { car: 0, bus: 0, walker: 0, bike: 0, train: 0, truck: 0 };
     for (const a of this.agents) if (!a.target) have[a.kind]++;
     (Object.keys(want) as Agent["kind"][]).forEach((k) => {
-      let pool = k === "car" || k === "bus" ? this.roads : k === "bike" ? this.bikeTiles : this.walkTiles;
+      let pool = k === "car" || k === "bus" ? this.roads : k === "truck" ? (this.edgeRoads.length ? this.edgeRoads : this.roads) : k === "train" ? this.railTiles : k === "bike" ? this.bikeTiles : this.walkTiles;
       // Half of the people on foot start near cafés, schools, parks and plazas.
       if (k === "walker" && this.busyTiles.length && Math.random() < 0.5) pool = this.busyTiles;
       if (have[k] < want[k] && pool.length) this.spawn(k, pick(pool), k === "walker" && hasSchool && Math.random() < 0.25);
@@ -827,7 +865,8 @@ export class WorldScene extends Phaser.Scene {
         }
       } else {
         if (a.t >= 1) {
-          const ok = (g: string) => (a.kind === "car" || a.kind === "bus" ? g === "road" : a.kind === "bike" ? g === "bike" : PAVED.includes(g as never));
+          const ok = (g: string) =>
+            a.kind === "car" || a.kind === "bus" || a.kind === "truck" ? g === "road" : a.kind === "train" ? g === "rail" : a.kind === "bike" ? g === "bike" : PAVED.includes(g as never);
           const nb = this.neighbours(a.to, ok);
           const fwd = nb.filter((x) => x !== a.from);
           const choice = fwd.length ? pick(fwd) : nb.length ? nb[0] : a.to;
@@ -841,7 +880,9 @@ export class WorldScene extends Phaser.Scene {
         fy = f.y + (to.y - f.y) * a.t;
         dx = to.x - f.x;
         dy = to.y - f.y;
-        if (a.kind === "car" || a.kind === "bus") {
+        if (a.kind === "train") {
+          // Trains run down the middle of the track.
+        } else if (a.kind === "car" || a.kind === "bus" || a.kind === "truck") {
           // Keep to the right-hand lane.
           fx += -dy * 0.17;
           fy += dx * 0.17;
@@ -852,7 +893,7 @@ export class WorldScene extends Phaser.Scene {
           fx += -dy * off * a.side + (dy ? 0 : Math.sin(a.from * 9.1) * 0.12);
           fy += dx * off * a.side + (dx ? 0 : Math.cos(a.from * 7.3) * 0.12);
         }
-        if (a.kind === "car" && !this.deps.reduced) {
+        if ((a.kind === "car" || a.kind === "truck") && !this.deps.reduced) {
           a.puff = (a.puff ?? 0) + dt * 1000;
           if (a.puff > 2600) {
             a.puff = 0;
@@ -877,6 +918,47 @@ export class WorldScene extends Phaser.Scene {
         const ahead = P(fx + dx * 0.45, fy + dy * 0.45);
         a.light.setPosition(ahead.x, ahead.y - 2).setDepth(a.img.depth + 0.1).setAlpha(night * 0.85);
       }
+    }
+  }
+
+  // ------------------------------------------------------------------ weather
+  private updateWeather(dt: number, time: number) {
+    const cam = this.cameras.main;
+    const view = cam.worldView;
+    const w = this.e.weather;
+    const reduced = this.deps.reduced;
+    const want = reduced ? 0 : w === "storm" ? this.rain.length : w === "rain" ? Math.floor(this.rain.length * 0.6) : 0;
+    this.rain.forEach((d, k) => {
+      if (k >= want) {
+        if (d.visible) d.setVisible(false);
+        return;
+      }
+      if (!d.visible || d.y > view.bottom + 20 || d.x < view.x - 40) {
+        d.setPosition(view.x + Math.random() * (view.width + 80), view.y - 20 + (d.visible ? -Math.random() * 60 : Math.random() * view.height)).setVisible(true);
+      }
+      d.x -= dt * 110;
+      d.y += dt * 520;
+    });
+    // Cloud shadows drift over the land on grey days.
+    const cloudAlpha = w === "sunny" ? 0 : w === "cloudy" ? 0.12 : w === "rain" ? 0.18 : 0.26;
+    for (const c of this.clouds) {
+      c.setAlpha(c.alpha + (cloudAlpha - c.alpha) * Math.min(1, dt));
+      if (!reduced) {
+        c.x += dt * 14;
+        c.y += dt * 4;
+        const half = (N * 64) / 2;
+        if (c.x > half + 200) {
+          c.x = -half - 200;
+          c.y = Math.random() * N * 32;
+        }
+      }
+    }
+    // Lightning in storms.
+    this.flash.setPosition(view.x - 20, view.y - 20).setSize(view.width + 40, view.height + 40);
+    if (w === "storm" && !reduced && time > this.nextFlash) {
+      this.nextFlash = time + 5000 + Math.random() * 7000;
+      this.tweens.add({ targets: this.flash, alpha: { from: 0.55, to: 0 }, duration: 380, ease: "Quad.easeOut" });
+      this.time.delayedCall(140, () => this.tweens.add({ targets: this.flash, alpha: { from: 0.35, to: 0 }, duration: 260 }));
     }
   }
 
@@ -963,6 +1045,13 @@ export class WorldScene extends Phaser.Scene {
       for (const g of this.ground) g.setTint(tint);
       for (const parts of this.cols) this.applyTint(parts);
     }
+    // Crops grow through the seasons.
+    t.cols.forEach((c, i) => {
+      if (c.g !== "field") return;
+      const { x, y } = xy(i);
+      const key = `g-field-${fieldStage(t.clock, x, y)}`;
+      if (this.ground[i].texture.key !== key) this.ground[i].setTexture(key);
+    });
     // Lit windows at night in homes with people.
     const homes = new Set(stats.homes);
     const lit = this.e.night * (t.residents > 0 ? 1 : 0);
@@ -1090,6 +1179,8 @@ export class WorldScene extends Phaser.Scene {
     }
 
     this.updateAgents(dt);
+    this.updateWeather(dt, time);
+
     // Haze follows the view and thickens with the air at homes.
     const view = cam.worldView;
     const hazeTarget = Phaser.Math.Clamp((this.store.sim.stats.homeAir - 3) / 36, 0, 1) * 0.42;
@@ -1132,6 +1223,8 @@ export function dayTint(e: Env) {
   };
   let c = mix(0xffffff, 0x5a6aa8, night * 0.85);
   c = mix(c, 0xffc49a, dusk * 0.35);
+  const gloom = { sunny: 0, cloudy: 0.14, rain: 0.28, storm: 0.42 }[e.weather];
+  c = mix(c, 0x8a96a4, gloom);
   // Quantise so tints only update when the change is visible.
   return c & 0xf8f8f8;
 }

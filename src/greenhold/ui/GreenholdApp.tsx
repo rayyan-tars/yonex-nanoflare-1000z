@@ -7,8 +7,9 @@ import { GameStore } from "../state/store";
 import { sfx } from "./audio";
 import { StoreContext, useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
-import { Advisor, Dock, FlyLayer, Meters, Toasts, TopBar } from "./Hud";
-import { CompletePanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
+import { Advisor, Dock, FlyLayer, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
+import { Minimap } from "./Minimap";
+import { CompletePanel, GoalsPanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
 import { Shop } from "./Shop";
 import { Splash } from "./Splash";
 
@@ -113,7 +114,9 @@ function Game() {
       <div className="gh-night" style={{ opacity: e.night * 0.25 }} aria-hidden="true" />
       <div className="gh-hud" inert={store.panel !== null}>
         <TopBar />
+        <WeatherChip />
         <Meters />
+        {!store.category && <Minimap />}
         {store.tool.kind !== "none" && (
           <div className="gh-mode" role="status">
             {store.tool.kind === "remove" ? "Remove: tap or drag to take off the top piece" : "Tap or drag on the map to build"}
@@ -135,6 +138,7 @@ function Game() {
         {store.panel === "stars" && <StarsPanel key="stars" />}
         {store.panel === "settings" && <SettingsPanel key="settings" />}
         {store.panel === "worlds" && <WorldsPanel key="worlds" />}
+        {store.panel === "goals" && <GoalsPanel key="goals" />}
         {store.panel === "complete" && <CompletePanel key="complete" />}
       </AnimatePresence>
     </>

@@ -77,4 +77,20 @@ export const WORLDS: readonly WorldDef[] = [
       { id: "isle-stars", name: "Earn all 3 eco stars", why: "A clean, green, walkable island.", coins: 400, done: (t, s) => s.starCount === 3 },
     ],
   },
+  {
+    name: "Golden Plains",
+    emoji: "🌾",
+    problem: "A farm town that grows almost nothing it eats. Food trucks rumble in along the highway all day.",
+    mission: "Grow food locally, build a railway for people, and make the plains self-sufficient.",
+    achievements: [
+      { id: "plains-fields", name: "Plant 6 crop fields", why: "Fields grow food right here, so fewer trucks need to drive it in.", coins: 120, done: (t) => count(t, "field") >= 6 },
+      { id: "plains-bees", name: "Set up beehives and an orchard", why: "Bees pollinate crops; fruit trees feed people and clean the air.", coins: 100, done: (t) => count(t, "beehives") > 0 && count(t, "orchard") > 0 },
+      { id: "plains-greenhouse", name: "Build a greenhouse", why: "Greenhouses grow food all year on a small patch of land.", coins: 120, done: (t) => count(t, "greenhouse") > 0 },
+      { id: "plains-market", name: "Open a farmers' market", why: "Selling local food in town keeps it off the highway.", coins: 100, done: (t) => count(t, "market") > 0 },
+      { id: "plains-local", name: "Grow all the food your town eats", why: "Watch the Food meter. When nothing has to be trucked in, the delivery trucks stop coming.", coins: 200, done: (t, s) => s.food.demand > 0 && s.food.imported === 0 },
+      { id: "plains-rail", name: "Lay 10 tiles of railway and a station", why: "A train line gives people a clean way to travel the plains.", coins: 150, done: (t, s) => count(t, "rail") >= 10 && count(t, "station") > 0 && s.noRail.length === 0 },
+      { id: "plains-travel", name: "Get car use below half", why: "Stations, bike lanes and shops near homes all cut car trips.", coins: 200, done: (t, s) => t.residents >= 4 && s.travel.carShare < 0.5 },
+      { id: "plains-stars", name: "Earn all 3 eco stars", why: "A green, self-sufficient farm town.", coins: 400, done: (t, s) => s.starCount === 3 },
+    ],
+  },
 ];

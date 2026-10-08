@@ -11,7 +11,7 @@ import { WORLDS } from "../model/worlds";
 import { TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, upgradeTownHall, type Town } from "../model/world";
 
 export type Tool = { kind: "none" } | { kind: "build"; id: string } | { kind: "remove" };
-export type Panel = null | "townhall" | "stars" | "settings" | "intro" | "worlds" | "complete";
+export type Panel = null | "townhall" | "stars" | "settings" | "intro" | "worlds" | "complete" | "goals";
 
 export interface Toast {
   id: number;
@@ -94,6 +94,8 @@ export class GameStore {
   previews: Record<string, string> = {};
   /** Screen position (CSS px) of a column, set by the scene. */
   screenOf: ((i: number) => { x: number; y: number }) | null = null;
+  /** The part of the map in view, in tiles (set by the scene, for the minimap). */
+  viewTiles: (() => { x: number; y: number }[]) | null = null;
   private listeners = new Set<() => void>();
   private timer = 0;
   private saveTimer = 0;

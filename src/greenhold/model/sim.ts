@@ -24,6 +24,32 @@ function noise(t: number) {
   return hash(i) + (hash(i + 1) - hash(i)) * u;
 }
 
+export type Weather = "sunny" | "cloudy" | "rain" | "storm";
+
+/** How each kind of weather changes clean power and the air. */
+export const WEATHER: Record<Weather, { label: string; solar: number; wind: number; wash: number }> = {
+  sunny: { label: "Sunny", solar: 1.2, wind: 0.8, wash: 0 },
+  cloudy: { label: "Cloudy", solar: 0.7, wind: 1, wash: 0 },
+  rain: { label: "Rain", solar: 0.45, wind: 1.15, wash: 0.03 },
+  storm: { label: "Storm", solar: 0.3, wind: 1.6, wash: 0.06 },
+};
+
+/** The weather at a moment of game time; spells last a minute or two. */
+export function weatherAt(clock: number): Weather {
+  const n = noise(clock / 90 + 50);
+  return n < 0.4 ? "sunny" : n < 0.64 ? "cloudy" : n < 0.86 ? "rain" : "storm";
+}
+
+/** The next change of weather within the next few minutes, if any. */
+export function forecast(clock: number): { weather: Weather; inSeconds: number } | null {
+  const now = weatherAt(clock);
+  for (let dt = 5; dt <= 240; dt += 5) {
+    const w = weatherAt(clock + dt);
+    if (w !== now) return { weather: w, inSeconds: dt };
+  }
+  return null;
+}
+
 export interface Env {
   /** 0..1 through the day (0.5 = noon). */
   dayPhase: number;
@@ -31,15 +57,17 @@ export interface Env {
   wind: number;
   /** 0 at noon, 1 at night. */
   night: number;
+  weather: Weather;
 }
 
 export function env(clock: number): Env {
   const dayPhase = (clock % DAY_SECONDS) / DAY_SECONDS;
   const d = (dayPhase - 0.22) / 0.56;
   const sun = d > 0 && d < 1 ? Math.sin(d * Math.PI) : 0;
-  const wind = 0.25 + 0.75 * noise(clock / 37);
+  const weather = weatherAt(clock);
+  const wind = Math.min(1.2, (0.25 + 0.75 * noise(clock / 37)) * WEATHER[weather].wind);
   const light = Math.min(1, Math.max(0, (Math.sin(2 * Math.PI * (dayPhase - 0.25)) + 0.3) / 0.6));
-  return { dayPhase, sun, wind, night: 1 - light };
+  return { dayPhase, sun, wind, night: 1 - light, weather };
 }
 
 /** Wind direction in radians (0 = toward +x); it slowly swings around. */
@@ -51,7 +79,14 @@ export interface Stats {
   /** Built columns that aren't homes yet, and why. */
   noRoof: number[];
   noAccess: number[];
-  energy: { supply: number; demand: number; clean: number; dirty: number; cleanShare: number };
+  /** Train stations with no railway next to them. */
+  noRail: number[];
+  /** Supply is today's, with the weather; `clean`/`dirty`/`cleanShare` are on an average day. */
+  energy: { supply: number; demand: number; clean: number; dirty: number; cleanShare: number; average: number };
+  food: { supply: number; demand: number; imported: number };
+  /** Delivery trucks bringing in food the town doesn't grow. */
+  trucks: number;
+  weather: Weather;
   travel: { covered: number; carShare: number; cars: number };
   /** Carbon made per minute. */
   co2: number;
@@ -88,9 +123,13 @@ export const STAR_NAMES = [
 export function analyze(t: Town, air: Float32Array): Stats {
   const paved = new Uint8Array(N * N);
   const bikeLane = new Uint8Array(N * N);
+  const rails = new Uint8Array(N * N);
+  let food = 0;
   t.cols.forEach((c, i) => {
     if (PAVED.includes(c.g)) paved[i] = 1;
     if (c.g === "bike") bikeLane[i] = 1;
+    if (c.g === "rail") rails[i] = 1;
+    if (c.g === "field") food += piece("field").food!;
   });
   const near = (i: number, r: number, mask: Uint8Array) => {
     const { x, y } = xy(i);
@@ -106,6 +145,9 @@ export function analyze(t: Town, air: Float32Array): Stats {
   const homes: number[] = [];
   const noRoof: number[] = [];
   const noAccess: number[] = [];
+  const noRail: number[] = [];
+  let solarCap = 0;
+  let windCap = 0;
   const homeCap = new Map<number, number>();
   let housing = 0;
   let insulSum = 0;
@@ -139,18 +181,30 @@ export function analyze(t: Town, air: Float32Array): Stats {
       if (p.energy && p.energy > 0) dirty += p.energy;
       if (p.energy && p.energy < 0) use -= p.energy;
       if (p.income) earners.push({ i, income: p.income });
-      if (p.solar) clean += p.solar;
-      if (p.wind) clean += p.wind;
+      if (p.solar) solarCap += p.solar;
+      if (p.wind) windCap += p.wind;
+      if (p.food) food += p.food;
       if (p.co2) co2 += p.co2;
       if (p.upkeep) upkeep += p.upkeep;
-      if (p.cover) stops.push({ i, r: p.cover });
+      if (p.id === "station" && !near(i, 1, rails)) noRail.push(i);
+      else if (p.cover) stops.push({ i, r: p.cover });
       if (p.nice) niceSpots.push({ i, r: p.nice });
     }
   });
 
   const residents = Math.min(t.residents, housing);
   const demand = (housing ? (residents * insulSum) / housing : 0) + use;
-  const supply = dirty + clean;
+  const weather = weatherAt(t.clock);
+  const w = WEATHER[weather];
+  clean = solarCap + windCap;
+  const average = dirty + clean;
+  const supply = dirty + solarCap * w.solar + windCap * w.wind;
+
+  // Food: what the farms grow, and what has to be trucked in.
+  const foodDemand = residents * 0.5;
+  const imported = Math.max(0, foodDemand - food);
+  co2 += imported * 0.4;
+  upkeep += imported * 0.3;
 
   // Travel: homes near a bike lane or a bus stop leave the car at home.
   let coveredCap = 0;
@@ -184,15 +238,19 @@ export function analyze(t: Town, air: Float32Array): Stats {
   }
 
   const enough = residents >= 4;
-  const cleanShare = supply > 0 ? clean / supply : 0;
-  const stars = [enough && cleanShare >= 0.7 && supply >= demand, enough && homeAir < AIR_OK, enough && carShare < 0.5];
+  const cleanShare = average > 0 ? clean / average : 0;
+  const stars = [enough && cleanShare >= 0.7 && average >= demand, enough && homeAir < AIR_OK, enough && carShare < 0.5];
 
   return {
     housing,
     homes,
     noRoof,
     noAccess,
-    energy: { supply, demand, clean, dirty, cleanShare },
+    noRail,
+    energy: { supply, demand, clean, dirty, cleanShare, average },
+    food: { supply: food, demand: foodDemand, imported },
+    trucks: imported / 3,
+    weather,
     travel: { covered, carShare, cars },
     co2,
     upkeep,
@@ -222,7 +280,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
   const clean = new Float32Array(N * N);
   let roads = 0;
   t.cols.forEach((c) => c.g === "road" && roads++);
-  const perRoad = roads ? (stats.travel.cars * 0.85) / roads : 0;
+  const perRoad = roads ? ((stats.travel.cars + stats.trucks * 2) * 0.85) / roads : 0;
   t.cols.forEach((c, i) => {
     if (c.g === "road") src[i] += perRoad;
     for (const id of c.s) {
@@ -246,7 +304,7 @@ export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: nu
       v += (up - p * (Math.abs(wx) + Math.abs(wy))) * dt;
       v += src[i] * dt * 2.2;
       // Natural clean-up, plus plants taking out a share of what passes over them.
-      v -= v * (0.009 + clean[i] * 0.25) * dt;
+      v -= v * (0.009 + clean[i] * 0.25 + WEATHER[e.weather].wash) * dt;
       if (x === 0 || y === 0 || x === N - 1 || y === N - 1) v *= 1 - 0.3 * dt;
       out[i] = Math.max(0, Math.min(100, v));
     }
@@ -322,7 +380,10 @@ export interface Tip {
 export function problem(t: Town, s: Stats): Tip | null {
   if (s.noRoof.length) return { tone: "warn", text: "A building needs a roof (or rooftop solar) before anyone can live in it.", at: s.noRoof[0] };
   if (s.noAccess.length) return { tone: "warn", text: "Nobody can reach that building. Lay a path, bike lane or road within 2 tiles.", at: s.noAccess[0] };
-  if (s.energy.demand > s.energy.supply + 0.01) return { tone: "warn", text: "Not enough energy. Add solar panels or a wind turbine." };
+  if (s.noRail.length) return { tone: "warn", text: "That train station has no railway. Lay track next to it, then trains will run.", at: s.noRail[0] };
+  if (s.energy.demand > s.energy.average + 0.01) return { tone: "warn", text: "Not enough energy. Add solar panels or a wind turbine." };
+  if (s.energy.demand > s.energy.supply + 0.01)
+    return { tone: "warn", text: `The ${WEATHER[s.weather].label.toLowerCase()} weather is cutting your clean power. A mix of solar and wind keeps the lights on in any weather.` };
   if (t.chest >= CHEST_CAP[t.th] * 0.95) return { tone: "warn", text: "The tax chest is full. Tap the Town Hall's coin bubble to collect.", at: idx(28, 28) };
   return null;
 }

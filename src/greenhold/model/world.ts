@@ -10,7 +10,7 @@ export const idx = (x: number, y: number) => y * N + x;
 export const xy = (i: number) => ({ x: i % N, y: Math.floor(i / N) });
 export const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < N && y < N;
 
-export type Ground = "grass" | "sand" | "water" | "road" | "path" | "bike" | "plaza";
+export type Ground = "grass" | "sand" | "water" | "road" | "path" | "bike" | "plaza" | "rail" | "field";
 export const PAVED: readonly Ground[] = ["road", "path", "bike", "plaza"];
 
 export interface Column {
@@ -95,7 +95,7 @@ function valueNoise(seed: number, scale: number) {
   };
 }
 
-export type Biome = "valley" | "city" | "island";
+export type Biome = "valley" | "city" | "island" | "plains";
 
 /** Open land around the town site: rivers, lakes and woods, or an island in the sea. */
 function terrain(seed: number, biome: Biome): Column[] {
@@ -116,7 +116,7 @@ function terrain(seed: number, biome: Biome): Column[] {
         // The city's river runs further out, around the grid of streets.
         const riverY = biome === "city" ? 44 - x * 0.18 + (wiggle(x, 3) - 0.5) * 6 : 5 + x * 0.32 + (wiggle(x, 3) - 0.5) * 8;
         const inRiver = Math.abs(y - riverY) < 1.4 && dCentre > 12;
-        const inLake = biome === "valley" && Math.hypot(x - lake.x, (y - lake.y) * 1.15) < lake.r + (wiggle(x, y) - 0.5) * 1.6;
+        const inLake = (biome === "valley" || biome === "plains") && Math.hypot(x - lake.x, (y - lake.y) * 1.15) < lake.r + (wiggle(x, y) - 0.5) * 1.6;
         if (inRiver || inLake) g = "water";
         else if (dCentre > 12 && (Math.abs(y - riverY) < 2.3 || (biome === "valley" && Math.hypot(x - lake.x, (y - lake.y) * 1.15) < lake.r + 1.4))) g = "sand";
       }
@@ -124,7 +124,7 @@ function terrain(seed: number, biome: Biome): Column[] {
       if ((g === "grass" || g === "sand") && dCentre > 9) {
         const f = forest(x, y);
         const v = r();
-        const woods = biome === "city" ? 0.7 : 0.62;
+        const woods = biome === "city" ? 0.7 : biome === "plains" ? 0.78 : 0.62;
         if (g === "grass" && f > woods && v < (f - 0.55) * 2.2) s.push(v < 0.5 ? "pine" : "oak");
         else if (v < 0.015) s.push("rock");
         else if (g === "grass" && v < 0.045) s.push("flowers");
@@ -137,7 +137,7 @@ function terrain(seed: number, biome: Biome): Column[] {
 
 /** A fresh town for a world: its land, a starting settlement, and the problem to solve. */
 export function newTown(seed: number, now: number, world = 0): Town {
-  const biome: Biome = world === 1 ? "city" : world === 2 ? "island" : "valley";
+  const biome: Biome = (["valley", "city", "island", "plains"] as const)[world] ?? "valley";
   const cols = terrain(seed, biome);
   const set = (x: number, y: number, g: Ground, s: string[] = []) => (cols[idx(x, y)] = { g, s });
   const clear = (x0: number, y0: number, x1: number, y1: number) => {
@@ -210,6 +210,30 @@ export function newTown(seed: number, now: number, world = 0): Town {
     set(START_COAL.x, START_COAL.y + 2, "road");
     for (let y = START_COAL.y + 3; y < 30; y++) set(START_COAL.x + 2, y, "road");
     for (let x = START_COAL.x; x <= START_COAL.x + 2; x++) set(x, START_COAL.y + 2, "road");
+  } else if (biome === "plains") {
+    // Golden Plains: a farm town that trucks in almost all its food along the highway.
+    t.name = "Golden Plains";
+    t.coins = 1000;
+    t.th = 2;
+    clear(18, 18, 40, 38);
+    set(TOWN_HALL.x, TOWN_HALL.y, "grass", ["townhall"]);
+    // The highway to the edge of the map, where the food trucks come from.
+    for (let x = 0; x <= 40; x++) set(x, 30, "road");
+    for (let y = 24; y <= 36; y++) set(34, y, "road");
+    set(TOWN_HALL.x, TOWN_HALL.y + 1, "plaza");
+    const homes: [number, number, string[]][] = [];
+    for (const x of [24, 25, 26, 30, 31, 32]) homes.push([x, 31, x % 2 ? ["timber", "roof"] : ["brick", "timber", "roof"]]);
+    for (const x of [24, 25, 30, 31]) homes.push([x, 29, ["timber", "slate"]]);
+    for (const y of [26, 27, 32, 33]) homes.push([35, y, ["brick", "brick", "roof"]]);
+    for (const [x, y, s] of homes) set(x, y, "grass", s);
+    // Clean power is in place: a wind farm on the hill.
+    for (const [x, y] of [
+      [38, 22],
+      [38, 25],
+      [38, 34],
+      [38, 37],
+    ])
+      set(x, y, "grass", ["wind"]);
   } else {
     // Greenhold Valley: a village powered by a coal plant upwind of the homes.
     t.name = "Greenhold";

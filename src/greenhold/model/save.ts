@@ -7,8 +7,8 @@ import { MAX_TH, N, type Column, type Ground, type Town } from "./world";
 
 export const SAVE_KEY = "greenhold.save.v2";
 
-const GROUNDS: readonly Ground[] = ["grass", "sand", "water", "road", "path", "bike", "plaza"];
-const CODE = "gswrpbz";
+const GROUNDS: readonly Ground[] = ["grass", "sand", "water", "road", "path", "bike", "plaza", "rail", "field"];
+const CODE = "gswrpbzlf";
 
 export function serialize(t: Town, air?: Float32Array): string {
   const { cols, ...rest } = t;

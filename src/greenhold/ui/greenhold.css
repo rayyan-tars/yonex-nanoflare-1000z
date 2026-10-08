@@ -1284,3 +1284,116 @@ button:focus-visible {
   gap: 4px;
   justify-items: end;
 }
+
+/* ------------------------------------------------------------------ weather, minimap, goals */
+.gh-weather {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  background: rgba(20, 40, 30, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.gh-weather svg {
+  font-size: 20px;
+  color: #ffd24a;
+}
+.gh-weather--cloudy svg {
+  color: #e8eef2;
+}
+.gh-weather--rain svg {
+  color: #9ad0ff;
+}
+.gh-weather--storm svg {
+  color: #c9b8ff;
+}
+.gh-weather__next {
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  font-weight: 700;
+  opacity: 0.85;
+}
+.gh-meter.is-warn .gh-meter__ico {
+  background: var(--gh-gold);
+}
+.gh-minimap {
+  position: absolute;
+  right: 14px;
+  bottom: 96px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(20, 40, 30, 0.55);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--gh-shadow);
+}
+.gh-minimap canvas {
+  display: block;
+  width: 180px;
+  height: auto;
+  cursor: pointer;
+  image-rendering: pixelated;
+}
+.gh-goals {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.gh-goals li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #fff;
+}
+.gh-goals li > svg {
+  font-size: 22px;
+  flex: none;
+  color: #c9c2ad;
+}
+.gh-goals li.is-done > svg {
+  color: var(--gh-green);
+}
+.gh-goals li.is-now {
+  outline: 3px solid var(--gh-gold);
+}
+.gh-goals li.is-now > svg {
+  color: var(--gh-gold);
+}
+.gh-goals li.is-later {
+  opacity: 0.7;
+}
+.gh-goals li > span:nth-child(2) {
+  flex: 1;
+  display: grid;
+  line-height: 1.25;
+}
+.gh-goals small {
+  color: var(--gh-ink-2);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .gh-weather {
+    top: auto;
+    bottom: 96px;
+    left: 14px;
+    transform: none;
+  }
+  .gh-weather__next {
+    display: none;
+  }
+  .gh-minimap {
+    display: none;
+  }
+}

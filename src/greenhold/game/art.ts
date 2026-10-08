@@ -5,7 +5,7 @@
  */
 import type Phaser from "phaser";
 import { drawAgents } from "./artAgents";
-import { drawTown } from "./artTown";
+import { drawFarmsAndRail, drawTown } from "./artTown";
 
 export const TW = 64;
 export const TH = 32;
@@ -167,6 +167,7 @@ export class Art {
     this.nature();
     this.fx();
     drawTown(this);
+    drawFarmsAndRail(this);
     drawAgents(this);
   }
 

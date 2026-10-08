@@ -1,22 +1,9 @@
 "use client";
 
-import {
-  CloudFog,
-  Coins,
-  Eraser,
-  Gear,
-  Globe,
-  Hammer,
-  Lightning,
-  Smiley,
-  SmileyMeh,
-  SmileySad,
-  Star,
-  Users,
-} from "@phosphor-icons/react";
+import { Cloud, CloudFog, CloudLightning, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { airLabel, problem } from "../model/sim";
+import { WEATHER, airLabel, env, forecast, problem, type Weather } from "../model/sim";
 import { WORLDS } from "../model/worlds";
 import { TH_TITLES } from "../model/world";
 import { useGame, useStoreRef } from "./context";
@@ -127,6 +114,23 @@ export function Meters() {
           <small className="gh-meter__note">{cleanPct}% clean</small>
         </span>
       </div>
+      <div className={`gh-meter ${s.food.imported === 0 ? "is-good" : "is-warn"}`} title={s.food.imported > 0 ? `${fmt(s.food.imported)} food trucked in: costs coins and makes fumes` : "All food grown locally"}>
+        <span className="gh-meter__ico">
+          <Plant weight="fill" />
+        </span>
+        <span className="gh-meter__body">
+          <span className="gh-meter__top">
+            <span>Food grown</span>
+            <b>
+              {fmt(Math.floor(s.food.supply))}/{fmt(Math.ceil(s.food.demand - 0.01))}
+            </b>
+          </span>
+          <span className="gh-meter__bar">
+            <i className="gh-meter__clean" style={{ width: `${s.food.demand ? Math.min(100, (s.food.supply / s.food.demand) * 100) : 100}%` }} />
+          </span>
+          {s.food.imported > 0 && <small className="gh-meter__note">🚚 {fmt(s.food.imported)} trucked in</small>}
+        </span>
+      </div>
       <div className={`gh-meter ${air.good ? "is-good" : "is-bad"}`}>
         <span className="gh-meter__ico">
           <CloudFog weight="fill" />
@@ -199,10 +203,10 @@ export function Advisor() {
           ) : (
             <>
               <b>{world.name} complete</b>
-              {t.world < WORLDS.length - 1
+              {store.progress.done.length < WORLDS.length
                 ? "Every achievement done! The next world is waiting."
                 : "You finished every world. Keep building however you like!"}
-              {t.world < WORLDS.length - 1 && (
+              {store.progress.done.length < WORLDS.length && (
                 <button
                   type="button"
                   className="gh-btn gh-btn--green gh-advisor__next"
@@ -228,6 +232,36 @@ export function Advisor() {
   );
 }
 
+const WEATHER_ICON: Record<Weather, typeof Sun> = { sunny: Sun, cloudy: Cloud, rain: CloudRain, storm: CloudLightning };
+const WEATHER_TIP: Record<Weather, string> = {
+  sunny: "Solar panels at their best; less wind.",
+  cloudy: "Solar makes less; wind as usual.",
+  rain: "Rain washes the air; solar is weak, wind picks up.",
+  storm: "Turbines spin fast; solar barely works. Rain washes the air.",
+};
+
+/** Time of day, today's weather and what's coming. */
+export function WeatherChip() {
+  const store = useGame();
+  const e = env(store.town.clock);
+  const next = forecast(store.town.clock);
+  const Icon = e.sun <= 0 && e.weather === "sunny" ? Moon : WEATHER_ICON[e.weather];
+  const hours = (e.dayPhase * 24 + 24) % 24;
+  const time = `${String(Math.floor(hours)).padStart(2, "0")}:${String(Math.floor(((hours % 1) * 60) / 10) * 10).padStart(2, "0")}`;
+  return (
+    <div className={`gh-weather gh-weather--${e.weather}`} title={WEATHER_TIP[e.weather]}>
+      <Icon weight="fill" aria-hidden="true" />
+      <b>{WEATHER[e.weather].label}</b>
+      <span>{time}</span>
+      {next && (
+        <span className="gh-weather__next">
+          Next: {WEATHER[next.weather].label.toLowerCase()} in {next.inSeconds < 60 ? `${next.inSeconds}s` : `${Math.round(next.inSeconds / 60)} min`}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function Dock() {
   const store = useGame();
   const remove = store.tool.kind === "remove";
@@ -235,6 +269,10 @@ export function Dock() {
     <div className="gh-dock">
       {!store.category && (
         <>
+          <button type="button" className="gh-round" onClick={() => store.openPanel("goals")}>
+            <Trophy weight="fill" aria-hidden="true" />
+            <small>Goals</small>
+          </button>
           <button
             type="button"
             className="gh-round"
