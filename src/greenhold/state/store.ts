@@ -6,9 +6,9 @@
  */
 import { piece, type Category } from "../model/pieces";
 import { deserialize, SAVE_KEY, serialize } from "../model/save";
-import { analyze, catchUp, collectTaxes, newSim, tick, type Sim, type SimEvent } from "../model/sim";
+import { advectAir, airInputs, airLabel, analyze, catchUp, collectTaxes, env, newSim, tick, type Sim, type SimEvent } from "../model/sim";
 import { WORLDS } from "../model/worlds";
-import { TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, upgradeTownHall, type Town } from "../model/world";
+import { TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, top, upgradeTownHall, type Town } from "../model/world";
 
 export type Tool = { kind: "none" } | { kind: "build"; id: string } | { kind: "remove" };
 export type Panel = null | "townhall" | "stars" | "settings" | "intro" | "worlds" | "complete" | "goals";
@@ -29,6 +29,8 @@ export interface BusEvents {
   fail: { i: number; reason: string };
   reset: Record<string, never>;
   focus: { i: number };
+  /** Eco Pulse: a polluting chimney closed and the neighbourhood clears (start), then settles (end). */
+  pulse: { i: number; phase: "start" | "end" };
 }
 
 export class Bus {
@@ -52,6 +54,9 @@ export interface Progress {
   done: number[];
 }
 const TICK = 0.25;
+/** Eco Pulse: how long it lasts (ms), and how many air steps it fast-forwards (16 a second at normal speed, so 30 s). */
+export const PULSE_MS = 2600;
+const PULSE_STEPS = 480;
 
 function readLS(key: string) {
   try {
@@ -90,6 +95,11 @@ export class GameStore {
   awayFor = 0;
   saveState: "new" | "loaded" | "repaired" = "new";
   progress: Progress = { unlocked: 0, done: [] };
+  /** Eco Vision: the environmental X-ray overlay. */
+  ecoVision = false;
+  /** While an Eco Pulse runs: where, and when it started (performance.now). */
+  pulse: { i: number; start: number } | null = null;
+  private pulseTimer = 0;
   /** Shop pictures drawn by the game art. */
   previews: Record<string, string> = {};
   /** Screen position (CSS px) of a column, set by the scene. */
@@ -156,6 +166,7 @@ export class GameStore {
 
   stop() {
     window.clearInterval(this.timer);
+    window.clearInterval(this.pulseTimer);
     window.clearInterval(this.saveTimer);
     this.timer = 0;
     window.removeEventListener("pagehide", this.persist);
@@ -261,11 +272,56 @@ export class GameStore {
       return false;
     }
     const wasGround = !this.town.cols[i].s.length;
+    const removed = top(this.town.cols[i]);
     remove(this.town, i);
     this.bus.emit("col", { i, change: wasGround ? "ground" : "remove" });
     if (this.selected === i && !this.town.cols[i].s.length) this.selected = null;
     this.refresh();
+    if (removed?.emit) this.ecoPulse(i);
     return true;
+  }
+
+  setEcoVision(on: boolean) {
+    this.ecoVision = on;
+    this.changed();
+  }
+
+  /**
+   * Eco Pulse: a chimney has closed. Nothing new goes into the air, so the
+   * air simulation is fast-forwarded (a time-lapse of the next ~20 seconds of
+   * the same physics) while the scene shows smoke stopping and haze leaving.
+   */
+  private ecoPulse(i: number) {
+    window.clearInterval(this.pulseTimer);
+    const before = this.sim.stats.homeAir;
+    const start = performance.now();
+    this.pulse = { i, start };
+    this.bus.emit("pulse", { i, phase: "start" });
+    const inputs = airInputs(this.town, this.sim.stats);
+    let done = 0;
+    const run = () => {
+      const f = Math.min(1, (performance.now() - start) / PULSE_MS);
+      // Fastest at first, easing off as the air settles.
+      const want = Math.round(PULSE_STEPS * (1 - Math.pow(1 - f, 3)));
+      const e = env(this.town.clock);
+      for (; done < want; done++) advectAir(this.sim.air, inputs, e, this.town.clock, TICK);
+      this.sim.stats = analyze(this.town, this.sim.air);
+      this.changed();
+      if (f >= 1) {
+        window.clearInterval(this.pulseTimer);
+        this.pulse = null;
+        const after = this.sim.stats.homeAir;
+        this.bus.emit("pulse", { i, phase: "end" });
+        const a = airLabel(before);
+        const b = airLabel(after);
+        // Say what is still dirtying the air, if anything.
+        const chimneys = this.town.cols.some((c) => top(c)?.emit);
+        const rest = b.good ? "" : chimneys ? " Another chimney is still smoking." : " What's left is mostly traffic: bike lanes and buses help.";
+        this.toast(`Chimney closed. Air at homes: ${a.label} ${Math.round(before)} → ${b.label} ${Math.round(after)}.${rest}`, after < before - 0.5 ? "good" : "info", 6500);
+        this.persistSoon();
+      }
+    };
+    this.pulseTimer = window.setInterval(run, 50);
   }
 
   select(i: number | null) {
@@ -317,6 +373,8 @@ export class GameStore {
   /** Starts (or restarts) a world. Locked worlds can't be started. */
   playWorld(world: number) {
     if (world > this.progress.unlocked) return;
+    window.clearInterval(this.pulseTimer);
+    this.pulse = null;
     writeLS(SAVE_KEY, null);
     this.startTown(world, this.now());
     this.tool = { kind: "none" };

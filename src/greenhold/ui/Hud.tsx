@@ -1,8 +1,9 @@
 "use client";
 
-import { Cloud, CloudFog, Drop, CloudLightning, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
+import { Cloud, CloudFog, Drop, CloudLightning, Eye, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
+import { ecoSummary, powerNetwork } from "../model/eco";
 import { WEATHER, airLabel, env, forecast, problem, type Weather } from "../model/sim";
 import { WORLDS } from "../model/worlds";
 import { TH_TITLES } from "../model/world";
@@ -150,7 +151,7 @@ export function Meters() {
           {s.food.imported > 0 && <small className="gh-meter__note">🚚 {fmt(s.food.imported)} trucked in</small>}
         </span>
       </div>
-      <div className={`gh-meter ${air.good ? "is-good" : "is-bad"}`}>
+      <div className={`gh-meter ${air.good ? "is-good" : "is-bad"}${store.pulse ? " is-clearing" : ""}`}>
         <span className="gh-meter__ico">
           <CloudFog weight="fill" />
         </span>
@@ -278,6 +279,120 @@ export function WeatherChip() {
         </span>
       )}
     </div>
+  );
+}
+
+const ECO_SEEN_KEY = "greenhold.ecovision.seen";
+const readSeen = () => {
+  try {
+    return window.localStorage.getItem(ECO_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+const writeSeen = () => {
+  try {
+    window.localStorage.setItem(ECO_SEEN_KEY, "1");
+  } catch {
+    // Storage blocked: the explainer just shows again next time.
+  }
+};
+
+/** Eco Vision: the X-ray toggle, a one-line key that reads the town, and a first-time explainer. */
+export function EcoVisionButton() {
+  const store = useGame();
+  const on = store.ecoVision;
+  const [explain, setExplain] = useState(false);
+  const toggle = () => {
+    const next = !on;
+    store.setEcoVision(next);
+    if (next && !readSeen()) setExplain(true);
+    if (!next) setExplain(false);
+  };
+  // The explainer shows once, then tucks itself away.
+  useEffect(() => {
+    if (!explain) return;
+    const t = window.setTimeout(() => {
+      setExplain(false);
+      writeSeen();
+    }, 12000);
+    return () => window.clearTimeout(t);
+  }, [explain]);
+  const close = () => {
+    setExplain(false);
+    writeSeen();
+  };
+  return (
+    <>
+      <div className={`gh-eco${on ? " is-on" : ""}`}>
+        <button type="button" className="gh-eco__btn" aria-pressed={on} onClick={toggle} title="Eco Vision (V): see power, pollution and nature at work">
+          <Eye weight={on ? "fill" : "bold"} aria-hidden="true" />
+          Eco Vision
+        </button>
+        <AnimatePresence>{on && <EcoKey key="key" onHelp={() => setExplain((x) => !x)} />}</AnimatePresence>
+      </div>
+      <AnimatePresence>{on && explain && <EcoExplainer key="explain" onClose={close} />}</AnimatePresence>
+    </>
+  );
+}
+
+function EcoKey({ onHelp }: { onHelp: () => void }) {
+  const store = useGame();
+  const s = store.sim.stats;
+  const sum = ecoSummary(s, store.sim.air, powerNetwork(store.town, s));
+  return (
+    <motion.div className="gh-eco__key" role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
+      <span title="Homes where the air is above the OK line">
+        <i className="gh-eco__sw gh-eco__sw--smog" />
+        Smoggy homes <b>{sum.smoggyHomes}</b>/{sum.homes}
+      </span>
+      <span title="Homes powered by sun, wind or water">
+        <i className="gh-eco__sw gh-eco__sw--clean" />
+        Clean power <b>{sum.cleanHomes}</b>
+      </span>
+      {sum.coalHomes > 0 && (
+        <span title="Homes powered by coal">
+          <i className="gh-eco__sw gh-eco__sw--coal" />
+          Coal <b>{sum.coalHomes}</b>
+        </span>
+      )}
+      {sum.unpoweredHomes > 0 && (
+        <span className="gh-eco__none" title="Not enough power to go round">
+          No power <b>{sum.unpoweredHomes}</b>
+        </span>
+      )}
+      <button type="button" className="gh-eco__help" onClick={onHelp} aria-label="What am I looking at?">
+        ?
+      </button>
+    </motion.div>
+  );
+}
+
+function EcoExplainer({ onClose }: { onClose: () => void }) {
+  return (
+    <motion.div className="gh-eco__explain" role="dialog" aria-label="Eco Vision" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.18 }}>
+      <b className="gh-eco__title">Eco Vision</b>
+      <div className="gh-eco__row">
+        <i className="gh-eco__sw gh-eco__sw--air" />
+        <span>Brown: dirty air. Smoke drifts from chimneys and busy roads with the wind.</span>
+      </div>
+      <div className="gh-eco__row">
+        <i className="gh-eco__sw gh-eco__sw--clean" />
+        <span>Green lines: clean power flowing to homes. Orange: coal.</span>
+      </div>
+      <div className="gh-eco__row">
+        <i className="gh-eco__sw gh-eco__sw--plant" />
+        <span>Green glow: trees and parks cleaning the air that passes over them.</span>
+      </div>
+      <div className="gh-eco__row">
+        <i className="gh-eco__sw gh-eco__sw--smog" />
+        <span>A brown cloud on a roof: those people are breathing smog.</span>
+      </div>
+      <small>Greenhold simulation indicators: simplified, not real-world measurements.</small>
+      <button type="button" className="gh-btn gh-btn--green gh-eco__ok" onClick={onClose}>
+        Got it
+      </button>
+    </motion.div>
   );
 }
 

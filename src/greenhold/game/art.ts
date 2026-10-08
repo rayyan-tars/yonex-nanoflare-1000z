@@ -805,6 +805,43 @@ export class Art {
     this.bake("fx-puff", 32, 32, 16, 16, (ctx) => soft(ctx, 0, 0, 16, 0xffffff, 0.9));
     this.bake("fx-smog", 128, 128, 64, 64, (ctx) => soft(ctx, 0, 0, 64, 0xffffff, 0.7));
     this.bake("fx-glow", 64, 64, 32, 32, (ctx) => soft(ctx, 0, 0, 32, 0xffffff, 1));
+    // Eco Vision: a power pulse, and a home's power badge (tinted by where its power comes from).
+    this.bake("eco-dot", 12, 12, 6, 6, (ctx) => soft(ctx, 0, 0, 6, 0xffffff, 1));
+    this.bake("eco-smog", 22, 16, 11, 8, (ctx) => {
+      // A solid little cloud with a pale rim, so it reads on dark roofs and bright ground alike.
+      const cloud = (grow: number, fill: string) => {
+        ctx.fillStyle = fill;
+        ctx.beginPath();
+        ctx.arc(-4, 1.5, 4 + grow, 0, Math.PI * 2);
+        ctx.moveTo(6 + grow, -1.5);
+        ctx.arc(1, -1.5, 5 + grow, 0, Math.PI * 2);
+        ctx.moveTo(9.1 + grow, 2);
+        ctx.arc(5.5, 2, 3.6 + grow, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillRect(-4, 1.5 - grow, 9.5, 4 + grow * 2);
+      };
+      cloud(1.2, "rgba(255,244,228,0.9)");
+      cloud(0, "#6e5644");
+    });
+    this.bake("eco-bolt", 16, 16, 8, 8, (ctx) => {
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(20,30,30,0.45)";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(1, -4.4);
+      ctx.lineTo(-2.6, 0.6);
+      ctx.lineTo(-0.2, 0.6);
+      ctx.lineTo(-1, 4.4);
+      ctx.lineTo(2.6, -0.8);
+      ctx.lineTo(0.2, -0.8);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(25,40,38,0.85)";
+      ctx.fill();
+    });
     this.bake("fx-spark", 16, 16, 8, 8, (ctx) => {
       ctx.fillStyle = "#fff";
       ctx.beginPath();

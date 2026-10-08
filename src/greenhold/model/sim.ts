@@ -75,6 +75,15 @@ export function env(clock: number): Env {
 /** Wind direction in radians (0 = toward +x); it slowly swings around. */
 export const windAngle = (clock: number) => 0.9 + Math.sin(clock / 300) * 1.2;
 
+/** Seconds of air movement per second of play (the air moves faster than the clock, so changes show within seconds). */
+export const AIR_TIME = AIR_SPEED;
+
+/** How far the air drifts in one second of air movement, in tiles (x, y on the map). */
+export function windVector(clock: number, wind: number) {
+  const ang = windAngle(clock);
+  return { x: Math.cos(ang) * wind * 0.35, y: Math.sin(ang) * wind * 0.35 };
+}
+
 export interface Stats {
   housing: number;
   homes: number[];
@@ -92,6 +101,8 @@ export interface Stats {
   trucks: number;
   weather: Weather;
   travel: { covered: number; carShare: number; cars: number };
+  /** Vehicles on each road tile: residents' cars on the roads near their homes, plus delivery trucks (weighted ×2). */
+  traffic: Float32Array;
   /** Carbon made per minute. */
   co2: number;
   /** Coins per minute spent on fuel and buses. */
@@ -225,10 +236,32 @@ export function analyze(t: Town, air: Float32Array): Stats {
 
   // Travel: homes near a bike lane or a bus stop leave the car at home.
   let coveredCap = 0;
-  for (const h of homes) if (near(h, 2, bikeLane) || stops.some((s) => within(s.i, h, s.r))) coveredCap += homeCap.get(h)!;
+  const coveredHome = new Set<number>();
+  for (const h of homes)
+    if (near(h, 2, bikeLane) || stops.some((s) => within(s.i, h, s.r))) {
+      coveredCap += homeCap.get(h)!;
+      coveredHome.add(h);
+    }
   const covered = housing ? coveredCap / housing : 0;
   const carShare = residents ? 1 - covered * 0.75 : 0;
   const cars = residents * carShare;
+
+  // Where the cars drive: half of each home's car trips are on the roads within 2 tiles of
+  // it, the rest spread over the whole network. A covered home drives a quarter as much.
+  const occ = housing ? residents / housing : 0;
+  const traffic = new Float32Array(N * N);
+  const roadList: number[] = [];
+  t.cols.forEach((c, i) => c.g === "road" && roadList.push(i));
+  let spread = (imported / 3) * 2;
+  for (const h of homes) {
+    const n = homeCap.get(h)! * occ * (coveredHome.has(h) ? 0.25 : 1);
+    const { x, y } = xy(h);
+    const local: number[] = [];
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inside(x + dx, y + dy) && t.cols[idx(x + dx, y + dy)].g === "road") local.push(idx(x + dx, y + dy));
+    if (local.length) for (const r of local) traffic[r] += (n * 0.5) / local.length;
+    spread += local.length ? n * 0.5 : n;
+  }
+  if (roadList.length) for (const r of roadList) traffic[r] += spread / roadList.length;
   co2 += cars * 0.25 + Math.max(0, demand - supply) * 0.5;
 
   // Air where people live.
@@ -271,6 +304,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
     trucks: imported / 3,
     weather,
     travel: { covered, carShare, cars },
+    traffic,
     co2,
     upkeep,
     homeAir,
@@ -293,25 +327,31 @@ export function airLabel(v: number): { label: string; good: boolean } {
   return { label: "Toxic", good: false };
 }
 
-/** Spreads, drifts and cleans air pollution for one step. */
-export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: number) {
+/** What puts pollution into the air (chimneys, traffic) and what takes it out (plants), per tile. */
+export function airInputs(t: Town, stats: Stats) {
   const src = new Float32Array(N * N);
   const clean = new Float32Array(N * N);
-  let roads = 0;
-  t.cols.forEach((c) => c.g === "road" && roads++);
-  const perRoad = roads ? ((stats.travel.cars + stats.trucks * 2) * 0.85) / roads : 0;
   t.cols.forEach((c, i) => {
-    if (c.g === "road") src[i] += perRoad;
+    if (c.g === "road") src[i] += stats.traffic[i] * 0.85;
     for (const id of c.s) {
       const p = piece(id);
       if (p.emit) src[i] += p.emit;
       if (p.absorb) clean[i] += p.absorb;
     }
   });
+  return { src, clean };
+}
+
+/** Spreads, drifts and cleans air pollution for one step. */
+export function stepAir(t: Town, air: Float32Array, e: Env, stats: Stats, dt: number) {
+  advectAir(air, airInputs(t, stats), e, t.clock, dt);
+}
+
+/** One step of the air grid: spreading, drifting downwind, new pollution in, plants and rain taking it out. */
+export function advectAir(air: Float32Array, inputs: { src: Float32Array; clean: Float32Array }, e: Env, clock: number, dt: number) {
+  const { src, clean } = inputs;
   const out = new Float32Array(N * N);
-  const ang = windAngle(t.clock);
-  const wx = Math.cos(ang) * e.wind * 0.35;
-  const wy = Math.sin(ang) * e.wind * 0.35;
+  const { x: wx, y: wy } = windVector(clock, e.wind);
   const at = (x: number, y: number) => air[idx(Math.min(N - 1, Math.max(0, x)), Math.min(N - 1, Math.max(0, y)))];
   for (let y = 0; y < N; y++) {
     for (let x = 0; x < N; x++) {

@@ -7,7 +7,7 @@ import { GameStore } from "../state/store";
 import { sfx } from "./audio";
 import { StoreContext, useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
-import { Advisor, Dock, FlyLayer, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
+import { Advisor, Dock, EcoVisionButton, FlyLayer, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
 import { Minimap } from "./Minimap";
 import { CompletePanel, GoalsPanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
 import { Shop } from "./Shop";
@@ -112,9 +112,11 @@ function Game() {
   return (
     <>
       <div className="gh-night" style={{ opacity: e.night * 0.25 }} aria-hidden="true" />
+      <div className={`gh-eco-frame${store.ecoVision ? " is-on" : ""}`} aria-hidden="true" />
       <div className="gh-hud" inert={store.panel !== null}>
         <TopBar />
         <WeatherChip />
+        <EcoVisionButton />
         <Meters />
         {!store.category && <Minimap />}
         {store.tool.kind !== "none" && (
@@ -173,6 +175,7 @@ function useKeys() {
         else if (store.selected !== null) store.select(null);
       }
       if (e.key.toLowerCase() === "b" && !e.metaKey && !e.ctrlKey) store.setCategory(store.category ? null : "homes");
+      if (e.key.toLowerCase() === "v" && !e.metaKey && !e.ctrlKey) store.setEcoVision(!store.ecoVision);
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);

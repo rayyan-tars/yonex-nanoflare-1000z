@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { PIECES, piece, type PieceDef } from "../model/pieces";
 import { env, windAngle, type Env } from "../model/sim";
+import { EcoLayer } from "./EcoLayer";
 import { N, PAVED, TOWN_HALL, canPlace, idx, inside, removeInfo, top, xy, type Column } from "../model/world";
 import type { GameStore } from "../state/store";
 import { Art, BH, P, RES } from "./art";
@@ -55,6 +56,8 @@ interface Agent {
   sx?: number;
   sy?: number;
   puff?: number;
+  /** People stepping out of their homes: the pavement tile they join the street at. */
+  join?: number;
 }
 
 const GROUND_DEPTH = -100000;
@@ -70,6 +73,11 @@ const pick = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
 const dirOf = (dx: number, dy: number): Dir => (dx > 0 ? "xp" : dx < 0 ? "xn" : dy > 0 ? "yp" : "yn");
 
 const colDepth = (x: number, y: number) => (x + y) * 40 + 1000;
+/** Eco Vision dims the world toward this so the flows read clearly. */
+const DIM = 0x6c7a88;
+/** Grass and trees in dirty air look tired: dull and yellowed. */
+const STRESSED = 0xc9b27a;
+const stressOf = (air: number) => Phaser.Math.Clamp((air - 5) / 25, 0, 1) * 0.6;
 /** Crops grow through three stages; fields nearby are a little out of step. */
 const fieldStage = (clock: number, x: number, y: number) => Math.floor(clock / 70 + ((x * 3 + y * 5) % 4) * 0.15) % 3;
 const groundKey = (g: string, x: number, y: number) => (g === "road" ? "g-road-0" : g === "rail" ? "g-rail-0" : g === "field" ? "g-field-0" : g === "grass" ? `g-grass-${(x * 7 + y * 13) % 3}` : g === "water" ? `g-water-${(x + y) % 3}` : `g-${g}`);
@@ -101,14 +109,22 @@ export class WorldScene extends Phaser.Scene {
   private clouds: Phaser.GameObjects.Image[] = [];
   private flash!: Phaser.GameObjects.Rectangle;
   private nextFlash = 0;
-  private smog: { img: Phaser.GameObjects.Image; target: number; i: number }[] = [];
+  private smog: { img: Phaser.GameObjects.Image; target: number; i: number; bx: number; by: number }[] = [];
+  /** How far the smog has been blown off downwind by an Eco Pulse (px; settles back afterwards). */
+  private smogDrift = 0;
   private coinBubble!: Phaser.GameObjects.Image;
   private badges: Phaser.GameObjects.Image[] = [];
   private thLabel!: Phaser.GameObjects.Text;
   private butterflies: Phaser.GameObjects.Image[] = [];
+  private eco!: EcoLayer;
+  /** Seconds into the current Eco Pulse (-1 when none). */
+  private pulseT = -1;
+  private lastFast = 0;
+  private lastCull = { car: 0, bus: 0, walker: 0, bike: 0, train: 0, truck: 0 };
   private offs: (() => void)[] = [];
   private keys = new Set<string>();
   private e: Env = env(0);
+  /** The world's tint: time of day, weather, and the Eco Vision dimming. */
   private tintNow = 0xffffff;
   private zoomTarget = 1;
   private zoomAnchor: { sx: number; sy: number } | null = null;
@@ -160,6 +176,8 @@ export class WorldScene extends Phaser.Scene {
         const cam = this.cameras.main;
         return { x: ((p.x - cam.worldView.x) * cam.zoom) / this.res, y: ((p.y - cam.worldView.y) * cam.zoom) / this.res };
       };
+      // Testing hook (only with ?debug in the address).
+      if (new URLSearchParams(window.location.search).has("debug")) (window as unknown as { greenholdScene: WorldScene }).greenholdScene = this;
       this.deps.onReady();
     } catch (e) {
       console.error(e);
@@ -207,6 +225,16 @@ export class WorldScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScale(0.5)
       .setDepth(UI_DEPTH);
+    this.eco = new EcoLayer({
+      scene: this,
+      store: this.store,
+      art: this.art,
+      reduced: this.deps.reduced,
+      roofOf: (i) => {
+        const { x, y } = xy(i);
+        return this.levelY(x, y, this.visualHeight(this.store.town.cols[i]));
+      },
+    });
     for (let i = 0; i < N * N; i++) {
       this.refreshGround(i);
       this.syncColumn(i, null);
@@ -216,7 +244,7 @@ export class WorldScene extends Phaser.Scene {
       for (let x = 0; x < N; x += 2) {
         const p = P(x + 0.5, y + 0.5);
         const img = this.add.image(p.x, p.y - 34, "fx-smog").setScale(1.6 / RES).setDepth(SMOG_DEPTH).setTint(0x8f7f62).setAlpha(0);
-        this.smog.push({ img, target: 0, i: idx(x, y) });
+        this.smog.push({ img, target: 0, i: idx(x, y), bx: p.x, by: p.y - 34 });
       }
     this.coinBubble = this.put("ui-coins", 0, 0, UI_DEPTH + 5).setVisible(false).setInteractive({ cursor: "pointer" });
     this.coinBubble.on("pointerdown", (_p: Phaser.Input.Pointer, _x: number, _y: number, ev: Phaser.Types.Input.EventData) => {
@@ -275,7 +303,7 @@ export class WorldScene extends Phaser.Scene {
       parts.push(part);
       if (anim === "add" && k === c.s.length - 1) this.dropIn(part, x, y);
     }
-    if (parts.length) this.applyTint(parts);
+    if (parts.length) this.applyTint(parts, i);
   }
 
   private destroyPart(p: Part) {
@@ -284,10 +312,27 @@ export class WorldScene extends Phaser.Scene {
     p.extras.forEach((e) => e.destroy());
   }
 
-  private applyTint(parts: Part[]) {
+  private applyTint(parts: Part[], i: number) {
+    const air = this.eco.airShown[i];
     for (const p of parts) {
-      p.img.setTint(this.tintNow);
-      p.extras.forEach((e) => e.setTint(this.tintNow));
+      const tint = piece(p.id).kind === "nature" ? this.stressTint(air) : this.tintNow;
+      p.img.setTint(tint);
+      p.extras.forEach((e) => e.setTint(tint));
+    }
+  }
+
+  private stressTint(air: number) {
+    const st = stressOf(air);
+    return st > 0.01 ? mixColor(this.tintNow, STRESSED, st) & 0xf8f8f8 : this.tintNow;
+  }
+
+  /** Re-tints the whole world: time of day, Eco Vision dimming, and plants tired by dirty air. */
+  private retint() {
+    const air = this.eco.airShown;
+    const t = this.store.town;
+    for (let i = 0; i < this.ground.length; i++) {
+      this.ground[i].setTint(t.cols[i].g === "grass" ? this.stressTint(air[i]) : this.tintNow);
+      if (this.cols[i].length) this.applyTint(this.cols[i], i);
     }
   }
 
@@ -649,7 +694,21 @@ export class WorldScene extends Phaser.Scene {
           this.rebuildNetworks();
           this.syncColumn(i, null);
         } else this.syncColumn(i, change);
+        this.eco.townChanged();
         this.needHover = true;
+      }),
+      bus.on("pulse", ({ i, phase }) => {
+        if (phase === "start") {
+          this.pulseT = 0;
+          this.eco.chimneyClosed(i);
+          // Once the smoke has gone, people near the old plant come outside.
+          this.time.delayedCall(this.deps.reduced ? 0 : 1000, () => this.stepOutside(i));
+        } else {
+          this.pulseT = -1;
+          this.eco.pulseEnded();
+          this.eco.townChanged();
+          this.slowVisuals();
+        }
       }),
       bus.on("townhall", () => {
         const p = P(TOWN_HALL.x, TOWN_HALL.y);
@@ -813,17 +872,54 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  /** Eco Pulse: people in homes near the closed plant step out onto the street. */
+  private stepOutside(near: number) {
+    const homes = this.store.sim.stats.homes;
+    if (!homes.length || !this.walkTiles.length) return;
+    const c = xy(near);
+    const close = [...homes].sort((a, b) => {
+      const p = xy(a);
+      const q = xy(b);
+      return Math.hypot(p.x - c.x, p.y - c.y) - Math.hypot(q.x - c.x, q.y - c.y);
+    });
+    for (const h of close.slice(0, this.deps.reduced ? 3 : 7)) {
+      const hp = xy(h);
+      let best = -1;
+      let bd = Infinity;
+      for (const w of this.walkTiles) {
+        const p = xy(w);
+        const d = Math.abs(p.x - hp.x) + Math.abs(p.y - hp.y);
+        if (d < bd) {
+          bd = d;
+          best = w;
+        }
+      }
+      if (best < 0 || bd > 3) continue;
+      const a = this.spawn("walker", best, Math.random() < 0.25);
+      const bp = xy(best);
+      a.sx = hp.x;
+      a.sy = hp.y;
+      a.target = bp;
+      a.join = best;
+      a.t = -Math.random() * 0.8;
+      a.speed = 0.7 / Math.max(1, Math.hypot(bp.x - hp.x, bp.y - hp.y));
+    }
+  }
+
   private updateAgents(dt: number) {
     const stats = this.store.sim.stats;
     const t = this.store.town;
     const day = 0.35 + 0.65 * (1 - this.e.night);
     const hasSchool = t.cols.some((c) => c.s.includes("school"));
+    // Fewer people stay outside when the air at home is bad.
+    const outdoors = 1 - 0.5 * Phaser.Math.Clamp((stats.homeAir - 6) / 30, 0, 1);
+    const eco = this.eco.vis;
     // How many of each to show.
     const want = {
       car: this.roads.length >= 2 ? Math.min(40, Math.round(stats.travel.cars / 2.5)) : 0,
       bus: this.roads.length >= 2 && t.cols.some((c) => c.s.includes("bus")) ? Math.min(4, 1 + Math.floor(t.residents / 40)) : 0,
-      walker: this.walkTiles.length ? Math.round(Math.min(70, 4 + t.residents / 2) * day) : 0,
-      bike: this.bikeTiles.length >= 2 ? Math.min(18, Math.round((t.residents * stats.travel.covered) / 4)) : 0,
+      walker: this.walkTiles.length ? Math.round(Math.min(70, 4 + t.residents / 2) * day * outdoors) : 0,
+      bike: this.bikeTiles.length >= 2 ? Math.min(18, Math.round(((t.residents * stats.travel.covered) / 4) * outdoors)) : 0,
       train: this.railTiles.length >= 4 && t.cols.some((c) => c.s.includes("station")) ? Math.min(3, Math.ceil(this.railTiles.length / 14)) : 0,
       truck: this.roads.length >= 2 ? Math.min(10, Math.round(stats.trucks)) : 0,
     };
@@ -834,7 +930,9 @@ export class WorldScene extends Phaser.Scene {
       // Half of the people on foot start near cafés, schools, parks and plazas.
       if (k === "walker" && this.busyTiles.length && Math.random() < 0.5) pool = this.busyTiles;
       if (have[k] < want[k] && pool.length) this.spawn(k, pick(pool), k === "walker" && hasSchool && Math.random() < 0.25);
-      if (have[k] > want[k]) {
+      // Extra people head home gradually, not all at once.
+      if (have[k] > want[k] && this.time.now - this.lastCull[k] > (k === "walker" || k === "bike" ? 700 : 0)) {
+        this.lastCull[k] = this.time.now;
         const a = this.agents.find((x) => x.kind === k && !x.target);
         if (a) {
           this.dropAgent(a);
@@ -852,12 +950,19 @@ export class WorldScene extends Phaser.Scene {
       let dx = 0;
       let dy = 0;
       if (a.target) {
-        const k = Math.min(1, a.t);
+        const k = Phaser.Math.Clamp(a.t, 0, 1);
+        a.img.setVisible(a.t >= 0);
         fx = a.sx! + (a.target.x - a.sx!) * k;
         fy = a.sy! + (a.target.y - a.sy!) * k;
         dx = a.target.x - a.sx!;
         dy = a.target.y - a.sy!;
-        if (a.t >= 1.1) {
+        if (a.join !== undefined && a.t >= 1) {
+          // Out of the front door and onto the street: carry on as a normal walker.
+          a.target = undefined;
+          a.from = a.to = a.join;
+          a.join = undefined;
+          a.t = 1;
+        } else if (a.t >= 1.1) {
           this.sparkle(a.img.x, a.img.y - 10, 4, 0x9cf0b0);
           this.dropAgent(a);
           this.agents.splice(n, 1);
@@ -893,12 +998,20 @@ export class WorldScene extends Phaser.Scene {
           fx += -dy * off * a.side + (dy ? 0 : Math.sin(a.from * 9.1) * 0.12);
           fy += dx * off * a.side + (dx ? 0 : Math.cos(a.from * 7.3) * 0.12);
         }
-        if ((a.kind === "car" || a.kind === "truck") && !this.deps.reduced) {
+        if (!this.deps.reduced && a.kind !== "walker" && a.kind !== "train") {
+          // Exhaust; in Eco Vision it shows more clearly, and bikes leave a clean trail.
+          // A bus is one engine for many riders, so its trail is lighter than a car's.
           a.puff = (a.puff ?? 0) + dt * 1000;
-          if (a.puff > 2600) {
+          const back = P(fx - dx * 0.25, fy - dy * 0.25);
+          if ((a.kind === "car" || a.kind === "truck") && a.puff > (eco > 0.5 ? 900 : 2600)) {
             a.puff = 0;
-            const back = P(fx - dx * 0.25, fy - dy * 0.25);
-            this.puff(back.x, back.y - 3, 0x7d7d7d, 0.12, 0.18, 10);
+            this.puff(back.x, back.y - 3, eco > 0.5 ? 0x6a5646 : 0x7d7d7d, 0.12 + 0.14 * eco, 0.18, 10);
+          } else if (a.kind === "bus" && eco > 0.5 && a.puff > 1800) {
+            a.puff = 0;
+            this.puff(back.x, back.y - 3, 0x8c8780, 0.12 * eco, 0.16, 8);
+          } else if (a.kind === "bike" && eco > 0.5 && a.puff > 650) {
+            a.puff = 0;
+            this.puff(back.x, back.y - 2, 0x9ff5d6, 0.4 * eco, 0.07, 4);
           }
         }
       }
@@ -1033,18 +1146,33 @@ export class WorldScene extends Phaser.Scene {
     wander();
   }
 
+  /** Things that follow the air and the Eco Vision fade: world tint, plants, smog, the overlay. */
+  private slowVisuals() {
+    this.eco.refresh();
+    this.tintNow = mixColor(dayTint(this.e), DIM, 0.5 * this.eco.vis) & 0xf8f8f8;
+    this.retint();
+    const air = this.eco.airShown;
+    for (const s of this.smog) {
+      const { x, y } = xy(s.i);
+      let sum = 0;
+      for (const [dx, dy] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ])
+        if (inside(x + dx, y + dy)) sum += air[idx(x + dx, y + dy)];
+      s.target = Phaser.Math.Clamp((sum / 4 - 3) / 40, 0, 1) * 0.66 * (1 - 0.55 * this.eco.vis);
+    }
+  }
+
   // ------------------------------------------------------------------ slow sync (twice a second)
   private syncSlow(first = false) {
     const t = this.store.town;
     const stats = this.store.sim.stats;
     this.e = env(t.clock);
-    // Day and night: tint the world.
-    const tint = dayTint(this.e);
-    if (tint !== this.tintNow || first) {
-      this.tintNow = tint;
-      for (const g of this.ground) g.setTint(tint);
-      for (const parts of this.cols) this.applyTint(parts);
-    }
+    void first;
+    this.slowVisuals();
     // Crops grow through the seasons.
     t.cols.forEach((c, i) => {
       if (c.g !== "field") return;
@@ -1060,19 +1188,6 @@ export class WorldScene extends Phaser.Scene {
       // Homes light up when people live there; shops, schools and lamps light up every night.
       for (const p of parts) if (p.glow) p.glow.setAlpha((piece(p.id).housing ? on : this.e.night) * 0.95);
     });
-    // Smog where the air is dirty.
-    for (const s of this.smog) {
-      const { x, y } = xy(s.i);
-      let sum = 0;
-      for (const [dx, dy] of [
-        [0, 0],
-        [1, 0],
-        [0, 1],
-        [1, 1],
-      ])
-        if (inside(x + dx, y + dy)) sum += this.store.sim.air[idx(x + dx, y + dy)];
-      s.target = Phaser.Math.Clamp((sum / 4 - 3) / 40, 0, 1) * 0.66;
-    }
     // Tax bubble over the Town Hall.
     const th = P(TOWN_HALL.x, TOWN_HALL.y);
     if (t.chest >= 1 && !this.coinBubble.visible) {
@@ -1153,11 +1268,16 @@ export class WorldScene extends Phaser.Scene {
     const spin = dt * (0.6 + this.e.wind * 4.5) * (reduced ? 0.3 : 1);
     for (const parts of this.cols) for (const p of parts) if (p.id === "wind" && p.extras[0]) p.extras[0].rotation += spin;
 
-    // Smog drifts and fades.
+    // Smog drifts and fades. During an Eco Pulse it is blown off downwind as it thins.
+    if (this.pulseT >= 0 && !reduced) this.smogDrift += dt * (90 - this.pulseT * 25);
+    else this.smogDrift *= Math.exp(-dt * 0.8);
+    const ang = windAngle(this.store.town.clock);
+    const sdx = (Math.cos(ang) - Math.sin(ang)) * 0.7;
+    const sdy = (Math.cos(ang) + Math.sin(ang)) * 0.35;
     for (const s of this.smog) {
-      const a = s.img.alpha + (s.target - s.img.alpha) * Math.min(1, dt * 1.5);
+      const a = s.img.alpha + (s.target - s.img.alpha) * Math.min(1, dt * (this.pulseT >= 0 ? 2.5 : 1.5));
       s.img.setAlpha(a).setVisible(a > 0.01);
-      if (a > 0.01 && !reduced) s.img.x += Math.sin(time / 2400 + s.i) * 0.05;
+      if (a > 0.01 && !reduced) s.img.setPosition(s.bx + Math.sin(time / 2400 + s.i) * 6 + sdx * this.smogDrift, s.by + sdy * this.smogDrift);
     }
 
     // Water shimmer.
@@ -1180,14 +1300,24 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateAgents(dt);
     this.updateWeather(dt, time);
+    const visBefore = this.eco.vis;
+    this.eco.update(dt, time, this.e);
 
-    // Haze follows the view and thickens with the air at homes.
+    // During an Eco Pulse or an Eco Vision fade, follow the air ten times a second.
+    if (this.pulseT >= 0) this.pulseT += dt;
+    const fading = this.eco.vis !== visBefore || (this.eco.vis > 0 && this.eco.vis < 1);
+    if ((this.pulseT >= 0 || fading) && time - this.lastFast > 100) {
+      this.lastFast = time;
+      this.slowVisuals();
+    }
+
+    // Haze follows the view and thickens with the air at homes (lighter in Eco Vision, which shows the air itself).
     const view = cam.worldView;
-    const hazeTarget = Phaser.Math.Clamp((this.store.sim.stats.homeAir - 3) / 36, 0, 1) * 0.42;
+    const hazeTarget = Phaser.Math.Clamp((this.store.sim.stats.homeAir - 3) / 36, 0, 1) * 0.42 * (1 - 0.6 * this.eco.vis);
     this.haze
       .setPosition(view.x - 20, view.y - 20)
       .setSize(view.width + 40, view.height + 40)
-      .setAlpha(this.haze.alpha + (hazeTarget - this.haze.alpha) * Math.min(1, dt * 2));
+      .setAlpha(this.haze.alpha + (hazeTarget - this.haze.alpha) * Math.min(1, dt * (this.pulseT >= 0 ? 3 : 2)));
 
     if (this.store.rev !== this.rev) {
       this.rev = this.store.rev;
@@ -1213,14 +1343,17 @@ export class WorldScene extends Phaser.Scene {
   }
 }
 
+/** Mixes two colours (0 = all a, 1 = all b). */
+export function mixColor(a: number, b: number, t: number) {
+  const ch = (s: number) => Math.round(((a >> s) & 255) + ((((b >> s) & 255) - ((a >> s) & 255)) * t)) << s;
+  return ch(16) | ch(8) | ch(0);
+}
+
 /** World tint for the time of day: warm at dawn and dusk, blue at night. */
 export function dayTint(e: Env) {
   const night = e.night;
   const dusk = Math.max(0, 1 - Math.abs(e.sun - 0.15) / 0.15) * (e.sun > 0 ? 1 : 0.4);
-  const mix = (a: number, b: number, t: number) => {
-    const ch = (s: number) => Math.round(((a >> s) & 255) + ((((b >> s) & 255) - ((a >> s) & 255)) * t)) << s;
-    return ch(16) | ch(8) | ch(0);
-  };
+  const mix = mixColor;
   let c = mix(0xffffff, 0x5a6aa8, night * 0.85);
   c = mix(c, 0xffc49a, dusk * 0.35);
   const gloom = { sunny: 0, cloudy: 0.14, rain: 0.28, storm: 0.42 }[e.weather];

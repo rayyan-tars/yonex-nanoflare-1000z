@@ -1400,3 +1400,194 @@ button:focus-visible {
 .gh-meter__bar .gh-meter__water {
   background: #3f8fd6;
 }
+
+/* Eco Vision */
+.gh-eco {
+  position: absolute;
+  top: 54px;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: max-content;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.gh-eco__btn {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 2px solid transparent;
+  border-radius: 99px;
+  background: rgba(20, 40, 30, 0.55);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    transform 0.12s ease;
+}
+.gh-eco__btn svg {
+  font-size: 18px;
+  color: #8ff0cf;
+}
+.gh-eco__btn:hover {
+  background: rgba(20, 40, 30, 0.7);
+}
+.gh-eco__btn:active {
+  transform: scale(0.96);
+}
+.gh-eco.is-on .gh-eco__btn {
+  background: #1f5a48;
+  border-color: #8ff0cf;
+}
+.gh-eco__btn:focus-visible {
+  outline: 3px solid #ffd24a;
+  outline-offset: 2px;
+}
+.gh-eco__key {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 6px 5px 12px;
+  border-radius: 99px;
+  background: rgba(14, 28, 26, 0.72);
+  backdrop-filter: blur(6px);
+  color: #eef6f2;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.gh-eco__key span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gh-eco__key b {
+  color: #fff;
+}
+.gh-eco__help {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.gh-eco__help:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+.gh-eco__explain {
+  position: absolute;
+  top: 292px;
+  left: 14px;
+  width: 232px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(14, 28, 26, 0.86);
+  backdrop-filter: blur(6px);
+  color: #eef6f2;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.gh-eco__explain small {
+  color: rgba(238, 246, 242, 0.6);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.gh-eco__title {
+  color: #8ff0cf;
+  font-size: 14px;
+}
+.gh-eco__ok {
+  justify-self: start;
+  padding: 6px 14px;
+  font-size: 13px;
+}
+.gh-eco-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  box-shadow: inset 0 0 0 3px rgba(127, 245, 208, 0.45), inset 0 0 90px rgba(20, 70, 60, 0.45);
+  transition: opacity 0.3s ease;
+}
+.gh-eco-frame.is-on {
+  opacity: 1;
+}
+.gh-meter.is-clearing {
+  box-shadow: 0 0 0 2px rgba(63, 174, 106, 0.6), 0 0 16px rgba(63, 174, 106, 0.45);
+  border-radius: 12px;
+  transition: box-shadow 0.3s ease;
+}
+.gh-eco__row {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.gh-eco__row b {
+  color: #fff;
+}
+.gh-eco__sw {
+  flex: none;
+  width: 18px;
+  height: 10px;
+  border-radius: 99px;
+}
+.gh-eco__sw--air {
+  background: linear-gradient(90deg, rgba(222, 168, 92, 0.6), #82441e);
+}
+.gh-eco__sw--smog {
+  background: radial-gradient(circle, #6a5240 30%, rgba(94, 72, 54, 0.2) 75%);
+}
+.gh-eco__sw--clean {
+  height: 3px;
+  background: #8ff0cf;
+  box-shadow: 0 0 6px #8ff0cf;
+}
+.gh-eco__sw--coal {
+  height: 3px;
+  background: #f0a060;
+}
+.gh-eco__sw--plant {
+  background: radial-gradient(circle, #7fdc98 30%, rgba(127, 220, 152, 0.15) 75%);
+}
+.gh-eco__none {
+  color: #ffb4a4;
+}
+@media (max-width: 760px) {
+  .gh-eco {
+    top: auto;
+    bottom: 136px;
+    left: 14px;
+    right: auto;
+    margin: 0;
+    justify-items: start;
+  }
+  .gh-eco__key {
+    order: -1;
+    max-width: calc(100vw - 28px);
+    flex-wrap: wrap;
+    white-space: normal;
+    border-radius: 14px;
+  }
+  .gh-eco__explain {
+    top: 150px;
+  }
+}

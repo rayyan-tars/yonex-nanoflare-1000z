@@ -3,6 +3,7 @@ import { PIECES } from "./pieces";
 import { deserialize, serialize } from "./save";
 import { analyze, collectTaxes, newSim, tick } from "./sim";
 import { WORLDS } from "./worlds";
+import { powerNetwork } from "./eco";
 import { MAX_HEIGHT, N, START_COAL, TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, type Town } from "./world";
 
 /** A starting village with plenty of coins and a clear lot south-east of the street. */
@@ -263,5 +264,39 @@ describe("water", () => {
     place(t, water + 1, "hydro");
     const s = analyze(t, new Float32Array(N * N));
     expect(s.energy.clean).toBeGreaterThanOrEqual(20);
+  });
+});
+
+describe("eco vision", () => {
+  it("routes clean power first and lets coal fill the gap", () => {
+    const t = village();
+    let s = analyze(t, new Float32Array(N * N));
+    let net = powerNetwork(t, s);
+    expect(net.sources.map((x) => x.kind)).toEqual(["coal"]);
+    expect([...net.fed.values()].every((k) => k === "coal")).toBe(true);
+    build(t, 34, 34, "wind");
+    s = analyze(t, new Float32Array(N * N));
+    net = powerNetwork(t, s);
+    const kinds = [...net.fed.values()];
+    expect(kinds).toContain("clean");
+    expect(net.links.some((l) => l.kind === "clean" && l.a === idx(34, 34))).toBe(true);
+    remove(t, idx(START_COAL.x, START_COAL.y));
+    s = analyze(t, new Float32Array(N * N));
+    net = powerNetwork(t, s);
+    expect(net.sources.every((x) => x.kind === "clean")).toBe(true);
+  });
+
+  it("puts car exhaust on the roads near the homes that drive", () => {
+    const t = village();
+    const s = analyze(t, new Float32Array(N * N));
+    let total = 0;
+    s.traffic.forEach((v) => (total += v));
+    expect(total).toBeCloseTo(s.travel.cars + s.trucks * 2, 3);
+    const roads = t.cols.map((c, i) => (c.g === "road" ? i : -1)).filter((i) => i >= 0);
+    const nearHome = (r: number) => s.homes.some((h) => Math.abs((h % N) - (r % N)) <= 2 && Math.abs(Math.floor(h / N) - Math.floor(r / N)) <= 2);
+    const busy = roads.filter(nearHome);
+    const quiet = roads.filter((r) => !nearHome(r));
+    expect(busy.length).toBeGreaterThan(0);
+    if (quiet.length) expect(Math.max(...quiet.map((r) => s.traffic[r]))).toBeLessThan(Math.min(...busy.map((r) => s.traffic[r])));
   });
 });
