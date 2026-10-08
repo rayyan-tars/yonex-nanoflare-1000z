@@ -14,7 +14,7 @@ import Phaser from "phaser";
 import { piece } from "../model/pieces";
 import { AIR_OK, AIR_TIME, airInputs, windVector, type Env } from "../model/sim";
 import { powerNetwork, type PowerKind, type PowerLink, type PowerSource } from "../model/eco";
-import { N, idx, inside, top, xy } from "../model/world";
+import { N, PAVED, idx, inside, top, xy } from "../model/world";
 import type { GameStore } from "../state/store";
 import { BH, P, RES, type Art } from "./art";
 
@@ -23,6 +23,8 @@ const LINE_DEPTH = -59000;
 const PLUME_DEPTH = 900000 - 5;
 const MARK_DEPTH = 900000 + 2;
 export const ECO_COLORS = { clean: 0x7ff5d0, coal: 0xf0a060, none: 0xa0a4a8, smog: 0x5a4434, plant: 0x7fdc98 };
+/** Heat layer: exposed (warm) and shaded (cool) homes. */
+const HEAT_COLORS = { exposed: 0xef7a4a, partly: 0xf2b25a, shaded: 0x6cd6c8 };
 /** How fast power pulses travel along the lines, in tiles per second. */
 const PULSE_SPEED = 2.6;
 const MAX_PLUMES = 320;
@@ -115,6 +117,11 @@ export class EcoLayer {
   private netDirty = true;
   private fedMap = new Map<number, PowerKind | "none">();
   private pulse: { at: { x: number; y: number }; before: Float32Array; t: number } | null = null;
+  /** 0..1: how far the ground map has switched to the heat layer (during a heatwave). */
+  heatMix = 0;
+  private lastCool: Float32Array | null = null;
+  /** Tiles in or next to the built-up town (where heat builds up). */
+  readonly urban = new Uint8Array(N * N);
 
   constructor(private h: EcoHost) {
     const { scene } = h;
@@ -131,6 +138,7 @@ export class EcoLayer {
     this.roadsG = scene.add.graphics().setDepth(HEAT_DEPTH + 1).setAlpha(0).setVisible(false);
     this.linesG = scene.add.graphics().setDepth(LINE_DEPTH).setAlpha(0).setVisible(false);
     this.airShown.set(h.store.sim.air);
+    this.findUrban();
   }
 
   get on() {
@@ -140,6 +148,24 @@ export class EcoLayer {
   /** The town changed: re-route power, re-find roads and plants. */
   townChanged() {
     this.netDirty = true;
+    this.findUrban();
+  }
+
+  /** True while the ground map is fading between the air and heat layers. */
+  get changing() {
+    return this.heatMix > 0.001 && this.heatMix < 0.999;
+  }
+
+  /** The built-up town and 2 tiles around it: where roads and roofs soak up the sun. */
+  findUrban() {
+    const t = this.h.store.town;
+    this.urban.fill(0);
+    t.cols.forEach((c, i) => {
+      const built = PAVED.includes(c.g) || c.g === "rail" || c.s.some((id) => piece(id).kind !== "nature" && !piece(id).fixed);
+      if (!built) return;
+      const { x, y } = xy(i);
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (inside(x + dx, y + dy)) this.urban[idx(x + dx, y + dy)] = 1;
+    });
   }
 
   /** Eco Pulse: a polluting chimney at `i` closed. Its smoke hurries off and the air clears outward from it. */
@@ -197,6 +223,9 @@ export class EcoLayer {
         for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (inside(x + dx, y + dy)) green[idx(x + dx, y + dy)] += c * (dx || dy ? 0.5 : 1);
       }
     this.plants = plants;
+    if (s.heat.cool) this.lastCool = s.heat.cool;
+    const cool = this.heatMix > 0 ? this.lastCool : null;
+    const hm = this.heatMix;
     const ctx = this.heatTex.getContext();
     const data = ctx.getImageData(0, 0, N, N);
     const px = data.data;
@@ -216,6 +245,24 @@ export class EcoLayer {
       px[i * 4 + 1] = mixc(pg, 226);
       px[i * 4 + 2] = mixc(pb, 140);
       px[i * 4 + 3] = a * 255;
+      if (cool) {
+        // Heat layer: warm where the town has no shade, blue-green where trees, parks and water cool it.
+        const wet = t.cols[i].g === "water" || t.cols[i].g === "reservoir";
+        const shade = Math.min(1, cool[i]);
+        const paved = PAVED.includes(t.cols[i].g) || t.cols[i].s.length > 0;
+        const hot = wet ? 0 : this.urban[i] * (1 - shade) * (paved ? 1 : 0.8);
+        const ha = 0.5 * hot;
+        const ca = 0.42 * Math.max(shade, wet ? 0.6 : 0) * (1 - hot);
+        const ah = ha + ca * (1 - ha);
+        const mixh = (ch: number, cc: number) => (ah > 0 ? (ch * ha + cc * ca * (1 - ha)) / ah : 0);
+        const hr = mixh(244 - 18 * hot, 108);
+        const hg = mixh(182 - 86 * hot, 206);
+        const hb = mixh(98 - 34 * hot, 204);
+        px[i * 4] += (hr - px[i * 4]) * hm;
+        px[i * 4 + 1] += (hg - px[i * 4 + 1]) * hm;
+        px[i * 4 + 2] += (hb - px[i * 4 + 2]) * hm;
+        px[i * 4 + 3] += (ah * 255 - px[i * 4 + 3]) * hm;
+      }
     }
     ctx.putImageData(data, 0, 0);
     this.heatTex.refresh();
@@ -267,14 +314,19 @@ export class EcoLayer {
         this.bolts.set(hIdx, b);
       }
       b.setPosition(roof.x - 2, roof.y - 14).setTint(ECO_COLORS[fed]).setData("a", fed === "none" ? 0.65 : 1).setVisible(true);
-      // Smoggy air at this home: a small brown cloud beside its power badge, darker the worse it is.
-      const dirt = air[hIdx] >= AIR_OK ? Phaser.Math.Clamp(0.55 + (air[hIdx] - AIR_OK) / 30, 0.55, 1) : 0;
+      // Beside the power badge: in a heatwave, how hot the home is; otherwise a small brown cloud if the air is smoggy.
+      const sh = this.heatMix > 0.5 ? s.heat.shade.get(hIdx) : undefined;
+      const dirt = sh ? 1 : air[hIdx] >= AIR_OK ? Phaser.Math.Clamp(0.55 + (air[hIdx] - AIR_OK) / 30, 0.55, 1) : 0;
       let cuff = this.cuffs.get(hIdx);
       if (!cuff && dirt > 0) {
         cuff = this.h.scene.add.image(0, 0, "eco-smog").setScale(0.95 / RES).setDepth(MARK_DEPTH).setAlpha(0);
         this.cuffs.set(hIdx, cuff);
       }
-      if (cuff) cuff.setPosition(roof.x + 13, roof.y - 12).setData("target", dirt).setVisible(true);
+      if (cuff) {
+        if (sh) cuff.setTexture(sh === "shaded" ? "eco-leaf" : "eco-therm").setTint(HEAT_COLORS[sh]);
+        else cuff.setTexture("eco-smog").clearTint();
+        cuff.setPosition(roof.x + 13, roof.y - 12).setData("target", dirt).setVisible(true);
+      }
     }
     for (const [k, b] of this.bolts) if (!seen.has(k)) b.setVisible(false);
     for (const [k, c] of this.cuffs) if (!seen.has(k)) c.setData("target", 0);
@@ -404,6 +456,9 @@ export class EcoLayer {
   update(dt: number, time: number, e: Env) {
     // The clearing front keeps time with the store's air time-lapse (real time), so they stay in step on slow devices.
     if (this.pulse) this.pulse.t = this.h.store.pulse ? (performance.now() - this.h.store.pulse.start) / 1000 : this.pulse.t + dt;
+    // The ground map turns into the heat layer over a few seconds when a heatwave is forecast, and back after.
+    const heatOn = this.h.store.sim.stats.heat.phase !== "none" ? 1 : 0;
+    if (this.heatMix !== heatOn) this.heatMix = heatOn > this.heatMix ? Math.min(1, this.heatMix + dt / 3) : Math.max(0, this.heatMix - dt / 4);
     const target = this.on ? 1 : 0;
     if (this.vis !== target) {
       const step = this.h.reduced ? 1 : dt / 0.35;

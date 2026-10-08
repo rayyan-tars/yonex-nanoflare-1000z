@@ -4,6 +4,7 @@
  * plants. Sun and wind count at their daily average, so the town doesn't
  * black out every night. Everything is simplified game units.
  */
+import { AC_EXTRA, HEAT_WATER, heatAt, heatSkies, heatResult, shadeMap, shadeOf, type HeatLog, type HeatPhase, type HeatResult, type Shade } from "./heat";
 import { piece } from "./pieces";
 import { CHEST_CAP, N, PAVED, TH_UPGRADE, idx, inside, xy, type Town } from "./world";
 import { WORLDS } from "./worlds";
@@ -38,6 +39,8 @@ export const WEATHER: Record<Weather, { label: string; solar: number; wind: numb
 
 /** The weather at a moment of game time; spells last a minute or two. */
 export function weatherAt(clock: number): Weather {
+  // Heatwaves are clear and sunny from the first warning until a little after the heat ends.
+  if (heatSkies(clock)) return "sunny";
   const n = noise(clock / 90 + 50);
   return n < 0.4 ? "sunny" : n < 0.64 ? "cloudy" : n < 0.86 ? "rain" : "storm";
 }
@@ -117,15 +120,36 @@ export interface Stats {
   income: number;
   stars: boolean[];
   starCount: number;
+  heat: HeatStats;
+}
+
+/** The heatwave as it affects the town right now (see model/heat). */
+export interface HeatStats {
+  phase: HeatPhase;
+  intensity: number;
+  seconds: number;
+  /** Shade on every tile while a heatwave is forecast or on (null otherwise). */
+  cool: Float32Array | null;
+  /** How shaded each home is. */
+  shade: Map<number, Shade>;
+  shaded: number;
+  partly: number;
+  exposed: number;
+  /** Air-conditioning power at full heat, and whether power and water would hold at the peak. */
+  acPeak: number;
+  powerHolds: boolean;
+  waterHolds: boolean;
 }
 
 export interface Sim {
   air: Float32Array;
   stats: Stats;
+  /** The heatwave in progress, being scored. */
+  heat: HeatLog | null;
 }
 
 export function newSim(): Sim {
-  return { air: new Float32Array(N * N), stats: null as unknown as Stats };
+  return { air: new Float32Array(N * N), stats: null as unknown as Stats, heat: null };
 }
 
 export const STAR_NAMES = [
@@ -168,6 +192,8 @@ export function analyze(t: Town, air: Float32Array): Stats {
   let solarCap = 0;
   let windCap = 0;
   const homeCap = new Map<number, number>();
+  /** Each home's power use per resident slot (housing × insulation). */
+  const homeUse = new Map<number, number>();
   let housing = 0;
   let insulSum = 0;
   let dirty = 0;
@@ -193,7 +219,9 @@ export function analyze(t: Town, air: Float32Array): Stats {
         homes.push(i);
         homeCap.set(i, cap);
         housing += cap;
-        insulSum += blocks.reduce((n, p) => n + (p.housing ?? 0) * (p.insul ?? 1), 0) * (tp.insul ?? 1);
+        const use1 = blocks.reduce((n, p) => n + (p.housing ?? 0) * (p.insul ?? 1), 0) * (tp.insul ?? 1);
+        homeUse.set(i, use1);
+        insulSum += use1;
       }
     }
     for (const p of pieces) {
@@ -215,7 +243,22 @@ export function analyze(t: Town, air: Float32Array): Stats {
   });
 
   const residents = Math.min(t.residents, housing);
-  const demand = (housing ? (residents * insulSum) / housing : 0) + use;
+  const occ = housing ? residents / housing : 0;
+  // Heatwave: homes without shade run air-conditioning.
+  const hs = heatAt(t.clock);
+  const heat: HeatStats = { phase: hs.phase, intensity: hs.intensity, seconds: hs.seconds, cool: null, shade: new Map(), shaded: 0, partly: 0, exposed: 0, acPeak: 0, powerHolds: true, waterHolds: true };
+  if (hs.phase !== "none") {
+    const cool = shadeMap(t);
+    heat.cool = cool;
+    for (const h of homes) {
+      const sh = shadeOf(cool[h]);
+      heat.shade.set(h, sh);
+      heat[sh]++;
+      heat.acPeak += homeUse.get(h)! * occ * AC_EXTRA * (1 - Math.min(1, cool[h]));
+    }
+  }
+  const baseDemand = (housing ? (residents * insulSum) / housing : 0) + use;
+  const demand = baseDemand + heat.acPeak * heat.intensity;
   const weather = weatherAt(t.clock);
   const w = WEATHER[weather];
   clean = solarCap + windCap + hydroCap;
@@ -226,7 +269,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
   // Water: the Town Hall's old well, plus rain and river water collected and filtered.
   const collected = raw * (weather === "sunny" ? 0.85 : wet ? 1.25 : 1);
   const waterSupply = WELL + Math.min(collected, filterCap);
-  const waterDemand = residents * 0.5;
+  const waterDemand = residents * 0.5 * (1 + HEAT_WATER * heat.intensity);
 
   // Food: what the farms grow, and what has to be trucked in.
   const foodDemand = residents * 0.5;
@@ -248,7 +291,6 @@ export function analyze(t: Town, air: Float32Array): Stats {
 
   // Where the cars drive: half of each home's car trips are on the roads within 2 tiles of
   // it, the rest spread over the whole network. A covered home drives a quarter as much.
-  const occ = housing ? residents / housing : 0;
   const traffic = new Float32Array(N * N);
   const roadList: number[] = [];
   t.cols.forEach((c, i) => c.g === "road" && roadList.push(i));
@@ -277,7 +319,12 @@ export function analyze(t: Town, air: Float32Array): Stats {
   happiness += supply >= demand - 0.01 ? 10 : -25 * Math.min(1, (demand - supply) / Math.max(1, demand));
   happiness -= homeAir * 0.8;
   if (waterDemand > waterSupply + 0.01) happiness -= 20 * Math.min(1, (waterDemand - waterSupply) / waterDemand);
+  // Overheated homes are uncomfortable (nobody is harmed; they just like the town less).
+  if (homes.length) happiness -= 12 * heat.intensity * (heat.exposed / homes.length);
   happiness = Math.max(5, Math.min(100, happiness));
+  // Would power and water hold at the peak of the heat?
+  heat.powerHolds = supply >= baseDemand + heat.acPeak - 0.01;
+  heat.waterHolds = waterSupply >= residents * 0.5 * (1 + HEAT_WATER) - 0.01;
 
   // Shops and cafés earn from residents within 6 tiles (full takings at 12 or more).
   const occupancy = housing ? residents / housing : 0;
@@ -314,6 +361,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
     income,
     stars,
     starCount: stars.filter(Boolean).length,
+    heat,
   };
 }
 
@@ -371,7 +419,7 @@ export function advectAir(air: Float32Array, inputs: { src: Float32Array; clean:
   air.set(out);
 }
 
-export type SimEvent = { type: "goal"; id: string } | { type: "world" } | { type: "moveIn"; n: number };
+export type SimEvent = { type: "goal"; id: string } | { type: "world" } | { type: "moveIn"; n: number } | { type: "heat"; result: HeatResult };
 
 /** Advances the town by `dt` seconds of play. */
 export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
@@ -379,6 +427,25 @@ export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
   t.clock += dt;
   const s = analyze(t, sim.air);
   sim.stats = s;
+
+  // Heatwave: score how the town copes while the heat is strong; report when it ends.
+  const hs = s.heat;
+  if (hs.phase === "event" && hs.intensity >= 0.6) {
+    const log = (sim.heat ??= { n: 0, samples: 0, power: 0, water: 0, shadeSum: 0, last: { homes: 0, shaded: 0, partly: 0, exposed: 0 }, peakDemand: 0, peakSupply: 0 });
+    const homes = s.homes.length;
+    log.samples++;
+    log.power += s.energy.demand > 0 ? Math.min(1, s.energy.supply / s.energy.demand) : 1;
+    log.water += s.water.demand > 0 ? Math.min(1, s.water.supply / s.water.demand) : 1;
+    log.shadeSum += homes ? (hs.shaded + 0.5 * hs.partly) / homes : 1;
+    log.last = { homes, shaded: hs.shaded, partly: hs.partly, exposed: hs.exposed };
+    if (s.energy.demand > log.peakDemand) {
+      log.peakDemand = s.energy.demand;
+      log.peakSupply = s.energy.supply;
+    }
+  } else if (hs.phase !== "event" && sim.heat) {
+    if (sim.heat.samples > 0) events.push({ type: "heat", result: heatResult(sim.heat) });
+    sim.heat = null;
+  }
 
   // People move in while there's room and the town is pleasant; they leave if it isn't.
   const before = Math.floor(t.residents);
@@ -431,12 +498,24 @@ export function collectTaxes(t: Town) {
 
 export interface Tip {
   text: string;
+  /** Stays the same while the text counts down (so the card doesn't re-animate). */
+  key?: string;
   tone: "warn" | "goal" | "good";
   at?: number;
 }
 
 /** A problem to fix right now, if there is one; otherwise null (the current goal shows instead). */
 export function problem(t: Town, s: Stats): Tip | null {
+  const h = s.heat;
+  if (h.phase === "forecast")
+    return { tone: "warn", key: "heat-forecast", text: `A heatwave is coming in ${Math.ceil(h.seconds)}s. Shade, clean power and water will help your town cope.` };
+  if (h.phase === "event") {
+    const first = [...h.shade].find(([, sh]) => sh === "exposed")?.[0];
+    if (h.exposed) return { tone: "warn", text: `Heatwave: ${h.exposed} ${h.exposed === 1 ? "home has" : "homes have"} no shade. 2 trees, a park or a green roof within 2 tiles cools a home.`, at: first };
+    if (!h.powerHolds || s.energy.supply < s.energy.demand - 0.01) return { tone: "warn", text: "Heatwave: air-conditioning is straining the power. Add solar panels or a wind turbine." };
+    if (!h.waterHolds || s.water.supply < s.water.demand - 0.01) return { tone: "warn", text: "Heatwave: water is running short. Add a reservoir and filtration." };
+    return { tone: "good", text: "Heatwave: your town is coping. Shade, power and water are all holding." };
+  }
   if (s.noRoof.length) return { tone: "warn", text: "A building needs a roof (or rooftop solar) before anyone can live in it.", at: s.noRoof[0] };
   if (s.noAccess.length) return { tone: "warn", text: "Nobody can reach that building. Lay a path, bike lane or road within 2 tiles.", at: s.noAccess[0] };
   if (s.noRail.length) return { tone: "warn", text: "That train station has no railway. Lay track next to it, then trains will run.", at: s.noRail[0] };

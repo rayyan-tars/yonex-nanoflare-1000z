@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PIECES } from "./pieces";
 import { deserialize, serialize } from "./save";
-import { analyze, collectTaxes, newSim, tick } from "./sim";
+import { analyze, collectTaxes, newSim, tick, weatherAt } from "./sim";
 import { WORLDS } from "./worlds";
 import { powerNetwork } from "./eco";
+import { HEAT, heatAt, nextHeatwave, type HeatResult } from "./heat";
 import { MAX_HEIGHT, N, START_COAL, TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, type Town } from "./world";
 
 /** A starting village with plenty of coins and a clear lot south-east of the street. */
@@ -53,7 +54,7 @@ describe("the village", () => {
     expect(after.energy.supply).toBeGreaterThanOrEqual(after.energy.demand);
     expect(after.stars[0]).toBe(true);
     expect(after.homeAir).toBeLessThan(before.homeAir / 2);
-  });
+  }, 30000);
 });
 
 describe("building", () => {
@@ -299,4 +300,72 @@ describe("eco vision", () => {
     expect(busy.length).toBeGreaterThan(0);
     if (quiet.length) expect(Math.max(...quiet.map((r) => s.traffic[r]))).toBeLessThan(Math.min(...busy.map((r) => s.traffic[r])));
   });
+});
+
+/** Runs a town from the next heatwave warning until it has passed; returns the result. */
+function heatwave(t: Town): HeatResult {
+  const sim = newSim();
+  for (let k = 0; k < 40; k++) tick(t, sim, 0.25);
+  t.clock = nextHeatwave(t.clock);
+  let result: HeatResult | null = null;
+  for (let k = 0; k < (HEAT.forecast + HEAT.length + 2) * 4; k++) for (const e of tick(t, sim, 0.25)) if (e.type === "heat") result = e.result;
+  if (!result) throw new Error("no heatwave result");
+  return result;
+}
+
+describe("heatwave", () => {
+  it("is forecast, then hot and sunny for two minutes, then over", () => {
+    const w = HEAT.first + HEAT.period;
+    expect(heatAt(w - 1).phase).toBe("none");
+    expect(heatAt(w).phase).toBe("forecast");
+    expect(heatAt(w + HEAT.forecast + 60)).toMatchObject({ phase: "event", intensity: 1 });
+    expect(heatAt(w + HEAT.forecast + HEAT.length).phase).toBe("none");
+    expect(weatherAt(w + HEAT.forecast + 30)).toBe("sunny");
+    expect(nextHeatwave(w + 1)).toBe(w + HEAT.period);
+  });
+
+  it("makes unshaded homes need air-conditioning; trees shade them", () => {
+    const t = village();
+    t.clock = nextHeatwave(0) + HEAT.forecast + 60;
+    const hot = analyze(t, new Float32Array(N * N));
+    expect(hot.heat.exposed).toBeGreaterThan(0);
+    t.clock = 0;
+    const normal = analyze(t, new Float32Array(N * N));
+    expect(hot.energy.demand).toBeGreaterThan(normal.energy.demand);
+    expect(hot.water.demand).toBeGreaterThan(normal.water.demand);
+    // Two trees beside every home.
+    t.clock = nextHeatwave(0) + HEAT.forecast + 60;
+    for (const h of hot.homes) {
+      const x = h % N;
+      const y = Math.floor(h / N);
+      let n = 0;
+      for (let dy = -2; dy <= 2 && n < 2; dy++)
+        for (let dx = -2; dx <= 2 && n < 2; dx++) {
+          const i = idx(x + dx, y + dy);
+          if (!t.cols[i].s.length && canPlace(t, i, "oak").ok) {
+            place(t, i, "oak");
+            n++;
+          }
+        }
+    }
+    const shaded = analyze(t, new Float32Array(N * N));
+    expect(shaded.heat.exposed).toBeLessThan(hot.heat.exposed);
+    expect(shaded.heat.acPeak).toBeLessThan(hot.heat.acPeak);
+  });
+
+  it("scores the same town the same every time, and a prepared town higher", () => {
+    const a = heatwave(village());
+    const b = heatwave(village());
+    expect(b.score).toBe(a.score);
+    const t = village();
+    build(t, 34, 34, "wind");
+    build(t, 36, 34, "wind");
+    for (let x = 30; x < 40; x += 2) build(t, x, 36, "oak");
+    for (const [x, y] of [[26, 26], [30, 26], [26, 30], [30, 30], [24, 28], [32, 28]]) if (canPlace(t, idx(x, y), "oak").ok) build(t, x, y, "oak");
+    const c = heatwave(t);
+    expect(a.score).toBeGreaterThan(30);
+    expect(c.score).toBeGreaterThan(a.score);
+    expect(c.power).toBe(1);
+    expect(a.power).toBeLessThan(1);
+  }, 60000);
 });

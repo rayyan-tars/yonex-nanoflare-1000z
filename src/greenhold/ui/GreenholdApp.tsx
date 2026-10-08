@@ -7,7 +7,7 @@ import { GameStore } from "../state/store";
 import { sfx } from "./audio";
 import { StoreContext, useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
-import { Advisor, Dock, EcoVisionButton, FlyLayer, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
+import { Advisor, Dock, EcoVisionButton, FlyLayer, HeatResultCard, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
 import { Minimap } from "./Minimap";
 import { CompletePanel, GoalsPanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
 import { Shop } from "./Shop";
@@ -112,11 +112,13 @@ function Game() {
   return (
     <>
       <div className="gh-night" style={{ opacity: e.night * 0.25 }} aria-hidden="true" />
+      <div className="gh-heatlight" style={{ opacity: store.sim.stats.heat.intensity * (1 - e.night * 0.7) }} aria-hidden="true" />
       <div className={`gh-eco-frame${store.ecoVision ? " is-on" : ""}`} aria-hidden="true" />
       <div className="gh-hud" inert={store.panel !== null}>
         <TopBar />
         <WeatherChip />
         <EcoVisionButton />
+        <HeatResultCard />
         <Meters />
         {!store.category && <Minimap />}
         {store.tool.kind !== "none" && (

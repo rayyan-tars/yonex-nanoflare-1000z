@@ -77,6 +77,10 @@ const colDepth = (x: number, y: number) => (x + y) * 40 + 1000;
 const DIM = 0x6c7a88;
 /** Grass and trees in dirty air look tired: dull and yellowed. */
 const STRESSED = 0xc9b27a;
+/** Sun-scorched grass in a heatwave, where the town has no shade. */
+const DRY = 0xd9bf78;
+/** Warm, strong sunlight in a heatwave. */
+const HEAT_LIGHT = 0xffd9a6;
 const stressOf = (air: number) => Phaser.Math.Clamp((air - 5) / 25, 0, 1) * 0.6;
 /** Crops grow through three stages; fields nearby are a little out of step. */
 const fieldStage = (clock: number, x: number, y: number) => Math.floor(clock / 70 + ((x * 3 + y * 5) % 4) * 0.15) % 3;
@@ -121,6 +125,9 @@ export class WorldScene extends Phaser.Scene {
   private pulseT = -1;
   private lastFast = 0;
   private lastCull = { car: 0, bus: 0, walker: 0, bike: 0, train: 0, truck: 0 };
+  /** Heat shimmer over sun-baked roads (a small reused pool). */
+  private shimmer: { img: Phaser.GameObjects.Image; phase: number }[] = [];
+  private lastShimmer = 0;
   private offs: (() => void)[] = [];
   private keys = new Set<string>();
   private e: Env = env(0);
@@ -330,8 +337,16 @@ export class WorldScene extends Phaser.Scene {
   private retint() {
     const air = this.eco.airShown;
     const t = this.store.town;
+    const heat = this.store.sim.stats.heat;
+    const h = heat.intensity;
     for (let i = 0; i < this.ground.length; i++) {
-      this.ground[i].setTint(t.cols[i].g === "grass" ? this.stressTint(air[i]) : this.tintNow);
+      let g = t.cols[i].g === "grass" ? this.stressTint(air[i]) : this.tintNow;
+      // In the heat, grass in the town dries out where nothing shades it.
+      if (h > 0 && heat.cool && t.cols[i].g === "grass" && this.eco.urban[i]) {
+        const dry = h * Phaser.Math.Clamp((0.6 - heat.cool[i]) / 0.6, 0, 1);
+        if (dry > 0.02) g = mixColor(g, DRY, 0.55 * dry) & 0xf8f8f8;
+      }
+      this.ground[i].setTint(g);
       if (this.cols[i].length) this.applyTint(this.cols[i], i);
     }
   }
@@ -717,6 +732,10 @@ export class WorldScene extends Phaser.Scene {
         if (!this.deps.reduced) this.cameras.main.shake(200, 0.002);
       }),
       bus.on("moveIn", ({ n }) => this.moveIn(n)),
+      // After a heatwave the town handled well, people come back out near the Town Hall.
+      bus.on("heatEnd", ({ score }) => {
+        if (score >= 70) this.time.delayedCall(this.deps.reduced ? 0 : 1500, () => this.stepOutside(idx(TOWN_HALL.x, TOWN_HALL.y)));
+      }),
       bus.on("fail", ({ i }) => {
         const { x, y } = xy(i);
         const g = P(x, y);
@@ -746,6 +765,7 @@ export class WorldScene extends Phaser.Scene {
       this.smog = [];
       this.badges = [];
       this.butterflies = [];
+      this.shimmer = [];
       this.ground = [];
       this.cols = [];
     });
@@ -912,7 +932,11 @@ export class WorldScene extends Phaser.Scene {
     const day = 0.35 + 0.65 * (1 - this.e.night);
     const hasSchool = t.cols.some((c) => c.s.includes("school"));
     // Fewer people stay outside when the air at home is bad.
-    const outdoors = 1 - 0.5 * Phaser.Math.Clamp((stats.homeAir - 6) / 30, 0, 1);
+    // In a heatwave, fewer people are out, and those who are keep to the shade.
+    const heat = stats.heat;
+    const hot = heat.intensity * (1 - this.e.night);
+    const outdoors = (1 - 0.5 * Phaser.Math.Clamp((stats.homeAir - 6) / 30, 0, 1)) * (1 - 0.4 * hot);
+    const shady = hot > 0.1 && heat.cool ? this.walkTiles.filter((w) => heat.cool![w] >= 0.5) : [];
     const eco = this.eco.vis;
     // How many of each to show.
     const want = {
@@ -929,6 +953,7 @@ export class WorldScene extends Phaser.Scene {
       let pool = k === "car" || k === "bus" ? this.roads : k === "truck" ? (this.edgeRoads.length ? this.edgeRoads : this.roads) : k === "train" ? this.railTiles : k === "bike" ? this.bikeTiles : this.walkTiles;
       // Half of the people on foot start near cafés, schools, parks and plazas.
       if (k === "walker" && this.busyTiles.length && Math.random() < 0.5) pool = this.busyTiles;
+      if (k === "walker" && shady.length && Math.random() < 0.75 * hot) pool = shady;
       if (have[k] < want[k] && pool.length) this.spawn(k, pick(pool), k === "walker" && hasSchool && Math.random() < 0.25);
       // Extra people head home gradually, not all at once.
       if (have[k] > want[k] && this.time.now - this.lastCull[k] > (k === "walker" || k === "bike" ? 700 : 0)) {
@@ -944,7 +969,8 @@ export class WorldScene extends Phaser.Scene {
     const night = this.e.night;
     for (let n = this.agents.length - 1; n >= 0; n--) {
       const a = this.agents[n];
-      a.t += dt * a.speed;
+      // People walk a little slower in the heat.
+      a.t += dt * a.speed * (a.kind === "walker" ? 1 - 0.25 * hot : 1);
       let fx: number;
       let fy: number;
       let dx = 0;
@@ -974,7 +1000,9 @@ export class WorldScene extends Phaser.Scene {
             a.kind === "car" || a.kind === "bus" || a.kind === "truck" ? g === "road" : a.kind === "train" ? g === "rail" : a.kind === "bike" ? g === "bike" : PAVED.includes(g as never);
           const nb = this.neighbours(a.to, ok);
           const fwd = nb.filter((x) => x !== a.from);
-          const choice = fwd.length ? pick(fwd) : nb.length ? nb[0] : a.to;
+          let choice = fwd.length ? pick(fwd) : nb.length ? nb[0] : a.to;
+          // In the heat, people on foot turn toward the shadier way.
+          if (a.kind === "walker" && hot > 0.2 && heat.cool && fwd.length > 1 && Math.random() < 0.7 * hot) choice = fwd.reduce((b, x) => (heat.cool![x] > heat.cool![b] ? x : b));
           a.from = a.to;
           a.to = choice;
           a.t = a.from === a.to ? 0.5 : 0;
@@ -1075,6 +1103,51 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  // ------------------------------------------------------------------ heatwave
+  /** Heat shimmer: faint wavering air over the hottest unshaded roads and plazas in view. */
+  private updateShimmer(time: number) {
+    const heat = this.store.sim.stats.heat;
+    const h = heat.intensity * (1 - this.e.night);
+    if (this.deps.reduced || h <= 0.02 || !heat.cool) {
+      for (const s of this.shimmer) s.img.setVisible(false);
+      return;
+    }
+    if (!this.shimmer.length)
+      for (let k = 0; k < 16; k++) this.shimmer.push({ img: this.add.image(0, 0, "fx-shimmer").setScale(1 / RES).setDepth(OVERLAY_DEPTH + 5).setVisible(false), phase: Math.random() * 6 });
+    // Every few seconds, move the shimmer to hot tiles in view.
+    if (time - this.lastShimmer > 3000) {
+      this.lastShimmer = time;
+      const v = this.cameras.main.worldView;
+      const hot = this.walkTiles.filter((i) => {
+        if (heat.cool![i] >= 0.5 || this.store.town.cols[i].g === "path") return false;
+        const { x, y } = xy(i);
+        const p = P(x, y);
+        return p.x > v.x && p.x < v.right && p.y > v.y && p.y < v.bottom;
+      });
+      this.shimmer.forEach((s, k) => {
+        const i = hot.length ? hot[(k * 7919 + Math.floor(time / 3000)) % hot.length] : -1;
+        s.img.setData("on", i >= 0);
+        if (i < 0) return;
+        const { x, y } = xy(i);
+        const p = P(x, y);
+        s.img.setPosition(p.x, p.y - 4).setData("x", p.x);
+      });
+    }
+    for (const s of this.shimmer) {
+      if (!s.img.getData("on")) {
+        s.img.setVisible(false);
+        continue;
+      }
+      // Slow, gentle wavering; each patch fades in and out on its own rhythm.
+      const w = Math.sin(time / 900 + s.phase);
+      s.img
+        .setVisible(true)
+        .setX((s.img.getData("x") as number) + Math.sin(time / 420 + s.phase) * 1.5)
+        .setScale(1 / RES, (0.8 + 0.2 * Math.sin(time / 300 + s.phase)) / RES)
+        .setAlpha(0.16 * h * (0.55 + 0.45 * w));
+    }
+  }
+
   // ------------------------------------------------------------------ effects
   private puff(wx: number, wy: number, tint: number, alpha: number, scale: number, rise: number) {
     const s = this.add
@@ -1149,7 +1222,8 @@ export class WorldScene extends Phaser.Scene {
   /** Things that follow the air and the Eco Vision fade: world tint, plants, smog, the overlay. */
   private slowVisuals() {
     this.eco.refresh();
-    this.tintNow = mixColor(dayTint(this.e), DIM, 0.5 * this.eco.vis) & 0xf8f8f8;
+    const heat = this.store.sim.stats.heat.intensity;
+    this.tintNow = mixColor(mixColor(dayTint(this.e), HEAT_LIGHT, 0.22 * heat * (1 - this.e.night)), DIM, 0.5 * this.eco.vis) & 0xf8f8f8;
     this.retint();
     const air = this.eco.airShown;
     for (const s of this.smog) {
@@ -1300,12 +1374,14 @@ export class WorldScene extends Phaser.Scene {
 
     this.updateAgents(dt);
     this.updateWeather(dt, time);
+    this.updateShimmer(time);
     const visBefore = this.eco.vis;
     this.eco.update(dt, time, this.e);
 
     // During an Eco Pulse or an Eco Vision fade, follow the air ten times a second.
     if (this.pulseT >= 0) this.pulseT += dt;
-    const fading = this.eco.vis !== visBefore || (this.eco.vis > 0 && this.eco.vis < 1);
+    const hi = this.store.sim.stats.heat.intensity;
+    const fading = this.eco.vis !== visBefore || (this.eco.vis > 0 && this.eco.vis < 1) || this.eco.changing || (hi > 0 && hi < 1);
     if ((this.pulseT >= 0 || fading) && time - this.lastFast > 100) {
       this.lastFast = time;
       this.slowVisuals();

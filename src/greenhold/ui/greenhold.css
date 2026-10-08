@@ -1591,3 +1591,158 @@ button:focus-visible {
     top: 150px;
   }
 }
+
+/* Heatwave */
+.gh-weather--heat {
+  background: rgba(92, 44, 20, 0.62);
+}
+.gh-weather--heat svg {
+  color: #ffcf5a;
+}
+.gh-weather--heat.is-on svg {
+  color: #ff8a4a;
+}
+.gh-heatchips {
+  display: flex;
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+.gh-heatchips span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.gh-heatchips svg {
+  font-size: 14px;
+  color: currentColor !important;
+}
+.gh-heatchips .is-good {
+  background: rgba(63, 174, 106, 0.85);
+}
+.gh-heatchips .is-bad {
+  background: rgba(224, 83, 58, 0.9);
+}
+.gh-heatlight {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(255, 214, 140, 0.55), transparent 60%),
+    linear-gradient(rgba(255, 190, 110, 0.18), rgba(255, 170, 90, 0.1));
+  mix-blend-mode: soft-light;
+  transition: opacity 1s linear;
+}
+.gh-heatcard {
+  position: absolute;
+  top: 292px;
+  left: 14px;
+  width: 248px;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 249, 236, 0.96);
+  box-shadow: var(--gh-shadow);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gh-ink);
+}
+.gh-heatcard__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #b4532a;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gh-heatcard.is-good .gh-heatcard__title {
+  color: var(--gh-green-d);
+}
+.gh-heatcard__score {
+  font-size: 14px;
+}
+.gh-heatcard__score strong {
+  font-size: 22px;
+  margin-left: 4px;
+}
+.gh-heatcard ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+.gh-heatcard li {
+  padding-left: 18px;
+  position: relative;
+}
+.gh-heatcard li::before {
+  position: absolute;
+  left: 0;
+  font-weight: 900;
+}
+.gh-heatcard li.is-ok::before {
+  content: "✓";
+  color: var(--gh-green-d);
+}
+.gh-heatcard li.is-bad::before {
+  content: "!";
+  left: 4px;
+  color: var(--gh-red);
+}
+.gh-heatcard__tip {
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--gh-cream-2);
+  color: var(--gh-ink-2);
+}
+.gh-heatcard small {
+  color: var(--gh-ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.gh-heatcard__x {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--gh-ink-2);
+  cursor: pointer;
+}
+.gh-heatcard__x:hover {
+  background: var(--gh-cream-2);
+}
+.gh-eco__sw--heat {
+  background: linear-gradient(90deg, #6cc6c8, #f2b25a, #e2704a);
+}
+.gh-eco__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.gh-eco__dot--hot {
+  background: #ef7a4a;
+}
+.gh-eco__dot--cool {
+  background: #6cd6c8;
+}
+@media (max-width: 760px) {
+  .gh-heatchips span {
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+  .gh-heatcard {
+    top: 150px;
+  }
+}

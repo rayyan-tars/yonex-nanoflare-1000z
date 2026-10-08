@@ -1,9 +1,10 @@
 "use client";
 
-import { Cloud, CloudFog, Drop, CloudLightning, Eye, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
+import { Cloud, CloudFog, Drop, CloudLightning, Eye, Fire, Thermometer, Tree, Warning, X, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ecoSummary, powerNetwork } from "../model/eco";
+import type { HeatResult } from "../model/heat";
 import { WEATHER, airLabel, env, forecast, problem, type Weather } from "../model/sim";
 import { WORLDS } from "../model/worlds";
 import { TH_TITLES } from "../model/world";
@@ -180,8 +181,8 @@ export function Advisor() {
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={warn ? warn.text : goal ? goal.id : "done"}
-        className={`gh-advisor ${warn ? "gh-advisor--warn" : goal ? "" : "gh-advisor--good"}`}
+        key={warn ? (warn.key ?? warn.text) : goal ? goal.id : "done"}
+        className={`gh-advisor ${warn ? (warn.tone === "good" ? "gh-advisor--good" : "gh-advisor--warn") : goal ? "" : "gh-advisor--good"}`}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 8, transition: { duration: 0.15 } }}
@@ -260,14 +261,37 @@ const WEATHER_TIP: Record<Weather, string> = {
   storm: "Turbines spin fast; solar barely works. Rain washes the air.",
 };
 
-/** Time of day, today's weather and what's coming. */
+const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+
+/** Time of day, today's weather and what's coming (or the heatwave countdown). */
 export function WeatherChip() {
   const store = useGame();
   const e = env(store.town.clock);
   const next = forecast(store.town.clock);
+  const h = store.sim.stats.heat;
   const Icon = e.sun <= 0 && e.weather === "sunny" ? Moon : WEATHER_ICON[e.weather];
   const hours = (e.dayPhase * 24 + 24) % 24;
   const time = `${String(Math.floor(hours)).padStart(2, "0")}:${String(Math.floor(((hours % 1) * 60) / 10) * 10).padStart(2, "0")}`;
+  if (h.phase !== "none") {
+    const homes = store.sim.stats.homes.length;
+    return (
+      <div className={`gh-weather gh-weather--heat${h.phase === "event" ? " is-on" : ""}`} role="status" title="Shade, power and water decide how your town copes">
+        {h.phase === "forecast" ? <Warning weight="fill" aria-hidden="true" /> : <Fire weight="fill" aria-hidden="true" />}
+        <b>{h.phase === "forecast" ? `Heatwave in ${clock(h.seconds)}` : `Heatwave · ${clock(h.seconds)} left`}</b>
+        <span className="gh-heatchips">
+          <span className={h.exposed ? "is-bad" : "is-good"} title="Homes with shade: 2 trees, a park or a green roof within 2 tiles">
+            <Tree weight="fill" aria-hidden="true" /> Shade {homes - h.exposed}/{homes}
+          </span>
+          <span className={h.powerHolds ? "is-good" : "is-bad"} title="Power at the peak of the heat, with air-conditioning">
+            <Lightning weight="fill" aria-hidden="true" /> Power {h.powerHolds ? "OK" : "short"}
+          </span>
+          <span className={h.waterHolds ? "is-good" : "is-bad"} title="Water at the peak of the heat">
+            <Drop weight="fill" aria-hidden="true" /> Water {h.waterHolds ? "OK" : "short"}
+          </span>
+        </span>
+      </div>
+    );
+  }
   return (
     <div className={`gh-weather gh-weather--${e.weather}`} title={WEATHER_TIP[e.weather]}>
       <Icon weight="fill" aria-hidden="true" />
@@ -279,6 +303,55 @@ export function WeatherChip() {
         </span>
       )}
     </div>
+  );
+}
+
+/** After a heatwave: how the town coped, and what to improve. */
+export function HeatResultCard() {
+  const store = useGame();
+  const r = store.heatResult;
+  useEffect(() => {
+    if (!r) return;
+    const t = window.setTimeout(() => store.dismissHeatResult(), 20000);
+    return () => window.clearTimeout(t);
+  }, [r, store]);
+  return <AnimatePresence>{r && <HeatCard key="heat" r={r} onClose={() => store.dismissHeatResult()} />}</AnimatePresence>;
+}
+
+function HeatCard({ r, onClose }: { r: HeatResult; onClose: () => void }) {
+  const lines: { ok: boolean; text: string }[] = [];
+  const shaded = r.homes - r.exposed;
+  lines.push(r.exposed ? { ok: false, text: `${r.exposed} ${r.exposed === 1 ? "home" : "homes"} overheated with no shade` } : { ok: true, text: `All ${r.homes} homes had shade` });
+  if (r.exposed && shaded) lines.push({ ok: true, text: `${shaded} ${shaded === 1 ? "home was" : "homes were"} protected by shade` });
+  lines.push(r.power >= 0.99 ? { ok: true, text: "Power met peak demand" } : { ok: false, text: `Power fell short: ${Math.round(r.power * 100)}% of demand covered` });
+  lines.push(r.water >= 0.99 ? { ok: true, text: "Water held up" } : { ok: false, text: `Water ran short: ${Math.round(r.water * 100)}% of demand covered` });
+  const tips = [
+    r.exposed ? "Plant 2 trees or a park within 2 tiles of hot homes." : "",
+    r.power < 0.99 ? "Add solar or wind before the next heatwave." : "",
+    r.water < 0.99 ? "Add a reservoir and a filtration plant." : "",
+  ].filter(Boolean);
+  const good = r.score >= 70;
+  return (
+    <motion.div className={`gh-heatcard${good ? " is-good" : ""}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
+      <button type="button" className="gh-heatcard__x" onClick={onClose} aria-label="Close">
+        <X weight="bold" />
+      </button>
+      <b className="gh-heatcard__title">
+        <Thermometer weight="fill" aria-hidden="true" /> Heatwave passed
+      </b>
+      <div className="gh-heatcard__score">
+        Resilience <strong>{r.score}%</strong>
+      </div>
+      <ul>
+        {lines.map((l) => (
+          <li key={l.text} className={l.ok ? "is-ok" : "is-bad"}>
+            {l.text}
+          </li>
+        ))}
+      </ul>
+      {tips.length > 0 && <p className="gh-heatcard__tip">Next time: {tips.join(" ")}</p>}
+      <small>Greenhold simulation indicator</small>
+    </motion.div>
   );
 }
 
@@ -340,6 +413,27 @@ function EcoKey({ onHelp }: { onHelp: () => void }) {
   const store = useGame();
   const s = store.sim.stats;
   const sum = ecoSummary(s, store.sim.air, powerNetwork(store.town, s));
+  const h = s.heat;
+  if (h.phase !== "none")
+    return (
+      <motion.div className="gh-eco__key" role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
+        <span title="Heat layer: warm colours are exposed, blue-green is shaded">
+          <i className="gh-eco__sw gh-eco__sw--heat" />
+          Heat layer
+        </span>
+        <span title="No shade within 2 tiles">
+          <i className="gh-eco__dot gh-eco__dot--hot" />
+          Hot homes <b>{h.exposed}</b>
+        </span>
+        <span title="2 trees, a park or a green roof within 2 tiles">
+          <i className="gh-eco__dot gh-eco__dot--cool" />
+          Shaded <b>{h.shaded + h.partly}</b>
+        </span>
+        <button type="button" className="gh-eco__help" onClick={onHelp} aria-label="What am I looking at?">
+          ?
+        </button>
+      </motion.div>
+    );
   return (
     <motion.div className="gh-eco__key" role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
       <span title="Homes where the air is above the OK line">

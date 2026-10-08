@@ -4,6 +4,7 @@
  * that changes it bumps `rev` so React re-renders and emits a bus event so
  * the scene can animate exactly what changed.
  */
+import type { HeatResult } from "../model/heat";
 import { piece, type Category } from "../model/pieces";
 import { deserialize, SAVE_KEY, serialize } from "../model/save";
 import { advectAir, airInputs, airLabel, analyze, catchUp, collectTaxes, env, newSim, tick, type Sim, type SimEvent } from "../model/sim";
@@ -31,6 +32,8 @@ export interface BusEvents {
   focus: { i: number };
   /** Eco Pulse: a polluting chimney closed and the neighbourhood clears (start), then settles (end). */
   pulse: { i: number; phase: "start" | "end" };
+  /** A heatwave ended; the town's resilience score. */
+  heatEnd: { score: number };
 }
 
 export class Bus {
@@ -95,6 +98,8 @@ export class GameStore {
   awayFor = 0;
   saveState: "new" | "loaded" | "repaired" = "new";
   progress: Progress = { unlocked: 0, done: [] };
+  /** How the town coped with the last heatwave (shown until dismissed). */
+  heatResult: HeatResult | null = null;
   /** Eco Vision: the environmental X-ray overlay. */
   ecoVision = false;
   /** While an Eco Pulse runs: where, and when it started (performance.now). */
@@ -208,6 +213,10 @@ export class GameStore {
       this.persist();
     }
     if (e.type === "moveIn") this.bus.emit("moveIn", { n: e.n });
+    if (e.type === "heat") {
+      this.heatResult = e.result;
+      this.bus.emit("heatEnd", { score: e.result.score });
+    }
   }
 
   // ------------------------------------------------------------------ actions
@@ -279,6 +288,11 @@ export class GameStore {
     this.refresh();
     if (removed?.emit) this.ecoPulse(i);
     return true;
+  }
+
+  dismissHeatResult() {
+    this.heatResult = null;
+    this.changed();
   }
 
   setEcoVision(on: boolean) {
@@ -375,6 +389,7 @@ export class GameStore {
     if (world > this.progress.unlocked) return;
     window.clearInterval(this.pulseTimer);
     this.pulse = null;
+    this.heatResult = null;
     writeLS(SAVE_KEY, null);
     this.startTown(world, this.now());
     this.tool = { kind: "none" };

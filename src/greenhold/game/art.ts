@@ -805,6 +805,22 @@ export class Art {
     this.bake("fx-puff", 32, 32, 16, 16, (ctx) => soft(ctx, 0, 0, 16, 0xffffff, 0.9));
     this.bake("fx-smog", 128, 128, 64, 64, (ctx) => soft(ctx, 0, 0, 64, 0xffffff, 0.7));
     this.bake("fx-glow", 64, 64, 32, 32, (ctx) => soft(ctx, 0, 0, 32, 0xffffff, 1));
+    // Heat shimmer: a few faint wavy lines of hot air just above the ground.
+    this.bake("fx-shimmer", 44, 18, 22, 14, (ctx) => {
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.lineWidth = 1.1;
+      for (let row = 0; row < 3; row++) {
+        ctx.beginPath();
+        for (let x = -18; x <= 18; x += 2) {
+          const y = -3 - row * 4 + Math.sin(x / 3 + row * 1.7) * 1.2;
+          if (x === -18) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.globalAlpha = 0.9 - row * 0.25;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    });
     // Eco Vision: a power pulse, and a home's power badge (tinted by where its power comes from).
     this.bake("eco-dot", 12, 12, 6, 6, (ctx) => soft(ctx, 0, 0, 6, 0xffffff, 1));
     this.bake("eco-smog", 22, 16, 11, 8, (ctx) => {
@@ -822,6 +838,36 @@ export class Art {
       };
       cloud(1.2, "rgba(255,244,228,0.9)");
       cloud(0, "#6e5644");
+    });
+    // Heatwave badges (tinted): a thermometer for hot homes, a leaf for shaded ones.
+    this.bake("eco-therm", 16, 16, 8, 8, (ctx) => {
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(20,30,30,0.45)";
+      ctx.stroke();
+      ctx.fillStyle = "rgba(40,30,25,0.85)";
+      ctx.beginPath();
+      ctx.arc(0, 2.3, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(-0.9, -4, 1.8, 6);
+    });
+    this.bake("eco-leaf", 16, 16, 8, 8, (ctx) => {
+      ctx.beginPath();
+      ctx.arc(0, 0, 6.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(20,30,30,0.45)";
+      ctx.stroke();
+      ctx.fillStyle = "rgba(20,50,40,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(-3.4, 3.4);
+      ctx.quadraticCurveTo(-3.6, -3.6, 3.6, -3.6);
+      ctx.quadraticCurveTo(3.4, 3.2, -3.4, 3.4);
+      ctx.fill();
     });
     this.bake("eco-bolt", 16, 16, 8, 8, (ctx) => {
       ctx.beginPath();
