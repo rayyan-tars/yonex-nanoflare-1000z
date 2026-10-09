@@ -44,22 +44,15 @@
   display: block;
 }
 
-/* Greenhold heat light, warmer */
+/* Greenhold heat light, as a plain alpha tint (blend modes are costly full-screen) */
 .fs-heatlight {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 18% 0%, rgba(255, 196, 110, 0.75), transparent 62%),
-    linear-gradient(rgba(255, 170, 90, 0.34), rgba(255, 140, 70, 0.26));
-  mix-blend-mode: soft-light;
-}
-.fs-heatlight::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(rgba(255, 190, 120, 0.12), rgba(255, 160, 90, 0.1));
-  mix-blend-mode: multiply;
+    radial-gradient(ellipse at 18% 0%, rgba(255, 190, 100, 0.32), transparent 62%),
+    linear-gradient(rgba(255, 150, 70, 0.16), rgba(240, 120, 60, 0.12));
+  will-change: opacity;
 }
 .fs-root.is-reduced .fs-heatlight {
   transition: none;
@@ -202,6 +195,10 @@
 }
 .fs-lens[data-edge="future"] .fs-lens__knob {
   left: 8px;
+}
+.fs-lens[data-edge="future"] .fs-lens__line,
+.fs-lens[data-edge="today"] .fs-lens__line {
+  opacity: 0;
 }
 .fs-lens.is-locked .fs-lens__line,
 .fs-lens.is-locked .fs-lens__knob {

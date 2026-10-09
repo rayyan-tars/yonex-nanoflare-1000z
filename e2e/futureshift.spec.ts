@@ -177,9 +177,9 @@ test("Future Lens: drag, keyboard and 0/50/100 positions", async ({ page }) => {
   await page.keyboard.press("ArrowRight");
   expect((await debug(page)).lens).toBeCloseTo(0.95, 5);
 
-  // pixel alignment: the classroom block is unchanged by these choices,
-  // so it must be identical at 0% and 100%
-  const region = { x: 905, y: 228, width: 80, height: 70 };
+  // pixel alignment: the classroom roof is unchanged by these choices and no
+  // one walks there, so it must be identical at 0% and 100%
+  const region = { x: 760, y: 120, width: 150, height: 90 };
   await page.keyboard.press("Home");
   await page.waitForTimeout(100);
   const today = await page.screenshot({ clip: region });

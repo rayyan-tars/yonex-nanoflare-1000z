@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated FutureShift artifact bundle and test output:
+    "dist-artifact/**",
+    "test-results/**",
+    "playwright-report/**",
   ]),
 ]);
 
