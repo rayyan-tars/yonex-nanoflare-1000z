@@ -169,8 +169,15 @@ export class WorldScene extends Phaser.Scene {
 
   create() {
     try {
-      this.art = new Art(this);
-      this.art.build();
+      // The art is drawn once per game: textures outlive scene restarts (a new world, a restart),
+      // and redrawing every sprite took the page away for seconds on slow machines.
+      const cached = this.registry.get("greenhold.art") as Art | undefined;
+      if (cached) this.art = cached;
+      else {
+        this.art = new Art(this);
+        this.art.build();
+        this.registry.set("greenhold.art", this.art);
+      }
       if (!Object.keys(this.store.previews).length) this.store.setPreviews(previews(this));
       this.buildWorld();
       this.setupCamera();
@@ -248,6 +255,7 @@ export class WorldScene extends Phaser.Scene {
       store: this.store,
       art: this.art,
       reduced: this.deps.reduced,
+      res: this.res,
       roofOf: (i) => {
         const { x, y } = xy(i);
         return this.levelY(x, y, this.visualHeight(this.store.town.cols[i]));
@@ -1169,10 +1177,19 @@ export class WorldScene extends Phaser.Scene {
         // Water rises slowly and drains a little faster where it is shallow.
         p.depth += (target - p.depth) * Math.min(1, dt / (target > p.depth ? 2.5 : 3));
         p.flood = f;
+      }
+      // Deep water joins up with deep water on the neighbouring road tiles.
+      for (const [r, p] of this.puddles) {
         const full = p.depth > 0.45;
-        if (p.img.texture.key !== (full ? "fx-flood" : "fx-puddle")) p.img.setTexture(full ? "fx-flood" : "fx-puddle");
-        const s = full ? 0.7 + 0.3 * Phaser.Math.Clamp((p.depth - 0.45) / 0.4, 0, 1) : 0.35 + p.depth;
-        p.img.setScale(s / RES).setTint(this.tintNow).setAlpha(Phaser.Math.Clamp(p.depth * 2.2, 0, 0.88));
+        let key = "fx-puddle";
+        if (full) {
+          const { x, y } = xy(r);
+          const deep = (dx: number, dy: number) => inside(x + dx, y + dy) && (this.puddles.get(idx(x + dx, y + dy))?.depth ?? 0) > 0.45;
+          key = `fx-flood-${(deep(1, 0) ? 1 : 0) | (deep(-1, 0) ? 2 : 0) | (deep(0, 1) ? 4 : 0) | (deep(0, -1) ? 8 : 0)}`;
+        }
+        if (p.img.texture.key !== key) p.img.setTexture(key);
+        const s = full ? 1 : 0.35 + p.depth;
+        p.img.setScale(s / RES).setTint(this.tintNow).setAlpha(full ? 0.55 + 0.4 * Phaser.Math.Clamp((p.depth - 0.45) / 0.4, 0, 1) : Phaser.Math.Clamp(p.depth * 2.2, 0, 0.88));
       }
     } else if (this.puddles.size) {
       for (const p of this.puddles.values()) p.img.destroy();

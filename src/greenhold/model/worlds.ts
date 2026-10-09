@@ -35,9 +35,9 @@ export const WORLDS: readonly WorldDef[] = [
     problem: "A coal plant upwind of the village fills the streets with smoke.",
     mission: "Switch to clean power, close the coal plant and grow a happy village.",
     achievements: [
+      { id: "clean-power", name: "Build a wind turbine or solar panels", why: "Clean power, so the coal plant can go.", coins: 100, done: (t) => count(t, "solar", "wind", "solarroof") > 0 },
+      { id: "no-coal", name: "Remove the coal plant", why: "Once clean power covers your homes (watch the Energy meter), take the smoke away.", coins: 200, done: (t) => hasNo(t, "coal") },
       { id: "collect", name: "Collect taxes at the Town Hall", why: "Tap the coin bubble above the Town Hall. Happy towns pay more.", coins: 50, done: (t) => t.counts.collected > 0 },
-      { id: "clean-power", name: "Build solar panels or a wind turbine", why: "They make energy without smoke and cost nothing to run.", coins: 100, done: (t) => count(t, "solar", "wind", "solarroof") > 0 },
-      { id: "no-coal", name: "Remove the coal plant", why: "Once clean power covers your homes, take the smoke away at its source. Watch the air clear.", coins: 200, done: (t) => hasNo(t, "coal") },
       { id: "trees", name: "Plant 6 trees", why: "Trees clean the air near homes and make people happier.", coins: 80, done: (t) => t.counts.trees >= 6 },
       { id: "home", name: "Build a new home", why: "Stack blocks, add a roof and keep a path within 2 tiles. Timber stores carbon; concrete releases it.", coins: 100, done: (t, s) => s.housing >= 28 },
       { id: "school", name: "Build a school near homes", why: "Children who live within 6 tiles walk to school instead of being driven.", coins: 120, done: (t) => count(t, "school") > 0 },

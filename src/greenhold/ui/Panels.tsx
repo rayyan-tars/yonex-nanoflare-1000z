@@ -78,21 +78,7 @@ export function IntroPanel() {
       <p className="gh-lead">
         <b>Your mission:</b> {world.mission}
       </p>
-      <ul className="gh-intro">
-        <li>
-          <span>🧱</span>
-          <span>
-            <b>Build anything.</b> Stack blocks, add a roof, keep a path nearby, and people move in. Add cafés, schools and parks to make it a real town.
-          </span>
-        </li>
-        <li>
-          <span>🏆</span>
-          <span>
-            <b>{world.achievements.length} achievements</b> to earn, one at a time. Finish them all to unlock the next world.
-          </span>
-        </li>
-      </ul>
-      <p className="gh-small gh-muted">Drag to move, scroll or pinch to zoom. Numbers are simplified game values.</p>
+      <p className="gh-small gh-muted">Drag to move, scroll to zoom. Tap Build to place things. Numbers are simplified game values.</p>
       <div className="gh-row gh-row--end">
         <button type="button" className="gh-btn gh-btn--green gh-btn--big" onClick={close}>
           Let&rsquo;s go

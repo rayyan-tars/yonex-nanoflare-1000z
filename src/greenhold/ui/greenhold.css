@@ -1780,3 +1780,39 @@ button:focus-visible {
   padding: 6px 12px;
   font-size: 12.5px;
 }
+
+/* Phones: keep the weather and Eco Vision at the top right, clear of Fern's card at the bottom. */
+@media (max-width: 760px) {
+  .gh-weather,
+  .gh-weather--heat,
+  .gh-weather--flood {
+    top: 96px;
+    bottom: auto;
+    left: auto;
+    right: 14px;
+    transform: none;
+    max-width: calc(100vw - 190px);
+    flex-wrap: wrap;
+  }
+  .gh-heatchips {
+    border-left: 0;
+    padding-left: 0;
+    flex-wrap: wrap;
+  }
+  .gh-eco {
+    top: 140px;
+    bottom: auto;
+    left: auto;
+    right: 14px;
+    margin: 0;
+    justify-items: end;
+  }
+  .gh-eco__key {
+    order: 0;
+    max-width: calc(100vw - 190px);
+  }
+  .gh-eco__explain,
+  .gh-heatcard {
+    top: 290px;
+  }
+}

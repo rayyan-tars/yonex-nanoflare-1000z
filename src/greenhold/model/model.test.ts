@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PIECES } from "./pieces";
 import { deserialize, serialize } from "./save";
-import { analyze, collectTaxes, newSim, tick, weatherAt } from "./sim";
+import { analyze, newSim, tick, weatherAt } from "./sim";
 import { WORLDS } from "./worlds";
 import { powerNetwork } from "./eco";
 import { FLOOD, floodAt, floodMap, nextFlood, type FloodResult } from "./flood";
@@ -109,7 +109,7 @@ describe("progress", () => {
     const t = village();
     run(t, 5);
     expect(t.goal).toBe(0);
-    collectTaxes(t);
+    build(t, 34, 34, "wind");
     run(t, 1);
     expect(t.goal).toBe(1);
     const coins = t.coins;

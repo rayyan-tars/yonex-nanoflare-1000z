@@ -16,8 +16,8 @@ import { piece } from "./pieces";
 import { N, PAVED, idx, inside, xy, type Town } from "./world";
 
 /**
- * First warning (5:30 on day three, a day after the first heatwave), the gap between storms (3 days),
- * the warning, the rain (9:30 to 18:30), the water draining away, then clear skies for a while.
+ * First warning (4:30 on day three, a day after the first heatwave), the gap between storms (3 days),
+ * the warning, the rain (8:30 to 17:30), the water draining away, then clear skies for a while.
  */
 export const FLOOD = { first: HEAT.first + 240, period: 720, forecast: 40, length: 90, rampIn: 10, rampOut: 12, drain: 30, after: 60 };
 

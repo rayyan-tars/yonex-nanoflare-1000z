@@ -65,6 +65,8 @@ export interface EcoHost {
   store: GameStore;
   art: Art;
   reduced: boolean;
+  /** Canvas pixels per CSS pixel. */
+  res: number;
   /** Ground-centre position of the top of a column, in world px. */
   roofOf: (i: number) => { x: number; y: number };
 }
@@ -431,6 +433,7 @@ export class EcoLayer {
       l.setText(text)
         .setColor(g.kind === "clean" ? "#9ff8dc" : "#ffc48a")
         .setPosition(mid.x, mid.y - tall)
+        .setData("y", mid.y - tall)
         .setData("on", true)
         .setVisible(true);
     });
@@ -504,7 +507,14 @@ export class EcoLayer {
     for (const g of this.sourceGlow) g.setAlpha(0.5 * this.vis).setVisible(this.vis > 0);
     // In the flood view the plant glows step back so the risk reads clearly.
     for (const [i, g] of this.plantGlow) g.setAlpha(0.32 * Math.min(1, this.clean[i] / 0.45) * this.vis * (1 - 0.75 * this.floodMix)).setVisible(this.vis > 0);
-    for (const l of this.labels) l.setAlpha(this.vis).setVisible(this.vis > 0 && l.getData("on") === true);
+    // Station tags stay below the top bar and the Eco Vision key (about 140 CSS px).
+    const cam = this.h.scene.cameras.main;
+    const minY = cam.worldView.y + (140 * this.h.res) / cam.zoom;
+    for (const l of this.labels) {
+      const y = l.getData("y") as number | undefined;
+      if (y !== undefined) l.setY(Math.max(y, minY));
+      l.setAlpha(this.vis).setVisible(this.vis > 0 && l.getData("on") === true);
+    }
     if (this.vis <= 0) {
       for (const b of this.bolts.values()) b.setVisible(false);
       for (const c of this.cuffs.values()) c.setVisible(false).setAlpha(0);

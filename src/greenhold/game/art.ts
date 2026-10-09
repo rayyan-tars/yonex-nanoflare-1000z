@@ -806,29 +806,38 @@ export class Art {
     this.bake("fx-smog", 128, 128, 64, 64, (ctx) => soft(ctx, 0, 0, 64, 0xffffff, 0.7));
     this.bake("fx-glow", 64, 64, 32, 32, (ctx) => soft(ctx, 0, 0, 32, 0xffffff, 1));
     // Standing water: a shallow sheet filling a road tile, a small puddle, and a raindrop ring.
-    this.bake("fx-flood", TW + 4, TH + 4, TW / 2 + 2, TH / 2 + 2, (ctx) => {
-      const d = [P(-0.47, -0.47), P(0.47, -0.47), P(0.47, 0.47), P(-0.47, 0.47)];
-      ctx.beginPath();
-      d.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.closePath();
-      const g = ctx.createLinearGradient(-TW / 2, -TH / 2, TW / 2, TH / 2);
-      g.addColorStop(0, "rgba(150,190,218,0.94)");
-      g.addColorStop(1, "rgba(96,140,176,0.94)");
-      ctx.fillStyle = g;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(205,225,235,0.55)";
-      ctx.lineWidth = 0.8;
-      ctx.stroke();
-      // Sky reflected in the water.
-      ctx.strokeStyle = "rgba(245,250,253,0.8)";
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.moveTo(-12, -2);
-      ctx.lineTo(4, -6);
-      ctx.moveTo(-2, 5);
-      ctx.lineTo(10, 2);
-      ctx.stroke();
-    });
+    // One version for each combination of flooded neighbours: water runs right to the edge where
+    // it joins the next flooded tile, and stops short with a soft rim where the road is dry.
+    for (let m = 0; m < 16; m++) {
+      this.bake(`fx-flood-${m}`, TW + 4, TH + 4, TW / 2 + 2, TH / 2 + 2, (ctx) => {
+        const edge = (bit: number, open: number) => (m & bit ? 0.5 : open);
+        const rect = (open: number) => {
+          const x0 = -edge(2, open);
+          const x1 = edge(1, open);
+          const y0 = -edge(8, open);
+          const y1 = edge(4, open);
+          const pts = [P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)];
+          ctx.beginPath();
+          pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+          ctx.closePath();
+        };
+        rect(0.45);
+        ctx.fillStyle = "rgba(120,162,194,0.45)";
+        ctx.fill();
+        rect(0.38);
+        ctx.fillStyle = "rgba(118,160,192,0.9)";
+        ctx.fill();
+        // Sky reflected in the water.
+        ctx.strokeStyle = "rgba(245,250,253,0.7)";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(-10, -2);
+        ctx.lineTo(3, -5);
+        ctx.moveTo(-1, 4);
+        ctx.lineTo(8, 2);
+        ctx.stroke();
+      });
+    }
     this.bake("fx-puddle", 30, 16, 15, 8, (ctx) => {
       ctx.fillStyle = "rgba(100,138,168,0.85)";
       ctx.beginPath();

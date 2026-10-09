@@ -11,10 +11,11 @@
 import { N, idx, inside, xy, type Town } from "./world";
 
 /**
- * First warning (game clock seconds: 5:30 on day two), the gap between heatwaves (3 days), the
- * warning, the heat itself (9:30 to 18:30, so it plays out in daylight), and clear skies after.
+ * First warning (game clock seconds: 4:30 on day two), the gap between heatwaves (3 days), the
+ * warning, the heat itself (8:30 to 17:30, so the result and the recovery come in daylight), and
+ * clear skies after.
  */
-export const HEAT = { first: 295, period: 720, forecast: 40, length: 90, rampIn: 8, rampOut: 12, after: 40 };
+export const HEAT = { first: 285, period: 720, forecast: 40, length: 90, rampIn: 8, rampOut: 12, after: 40 };
 
 export type HeatPhase = "none" | "forecast" | "event";
 
