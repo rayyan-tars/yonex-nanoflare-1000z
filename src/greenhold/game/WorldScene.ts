@@ -79,6 +79,8 @@ const DIM = 0x6c7a88;
 const STRESSED = 0xc9b27a;
 /** Sun-scorched grass in a heatwave, where the town has no shade. */
 const DRY = 0xd9bf78;
+/** Rain-darkened asphalt. */
+const WET = 0x56657e;
 /** Warm, strong sunlight in a heatwave. */
 const HEAT_LIGHT = 0xffd9a6;
 const stressOf = (air: number) => Phaser.Math.Clamp((air - 5) / 25, 0, 1) * 0.6;
@@ -125,6 +127,15 @@ export class WorldScene extends Phaser.Scene {
   private pulseT = -1;
   private lastFast = 0;
   private lastCull = { car: 0, bus: 0, walker: 0, bike: 0, train: 0, truck: 0 };
+  /** The light and the roads follow the weather gradually (seconds, not instantly). */
+  private gloomNow = 0;
+  private wetNow = 0;
+  /** Standing water on roads in heavy rain: how deep it is shown on each tile. */
+  private puddles = new Map<number, { img: Phaser.GameObjects.Image; depth: number; flood: boolean }>();
+  private ripples: { img: Phaser.GameObjects.Image; t: number }[] = [];
+  private floodedNow = new Set<number>();
+  /** One running note for placements that protect things in quick succession. */
+  private reliefNote: { label: Phaser.GameObjects.Text; roads: number; homes: number; until: number } | null = null;
   /** Heat shimmer over sun-baked roads (a small reused pool). */
   private shimmer: { img: Phaser.GameObjects.Image; phase: number }[] = [];
   private lastShimmer = 0;
@@ -346,6 +357,8 @@ export class WorldScene extends Phaser.Scene {
         const dry = h * Phaser.Math.Clamp((0.6 - heat.cool[i]) / 0.6, 0, 1);
         if (dry > 0.02) g = mixColor(g, DRY, 0.55 * dry) & 0xf8f8f8;
       }
+      // Wet roads go darker and a little blue.
+      if (this.wetNow > 0.02 && (PAVED.includes(t.cols[i].g) || t.cols[i].g === "rail")) g = mixColor(g, WET, 0.42 * this.wetNow) & 0xf8f8f8;
       this.ground[i].setTint(g);
       if (this.cols[i].length) this.applyTint(this.cols[i], i);
     }
@@ -370,7 +383,9 @@ export class WorldScene extends Phaser.Scene {
       ease: "Quad.easeIn",
       onComplete: () => {
         this.tweens.add({ targets: img, scaleY: { from: s * 0.82, to: s }, scaleX: { from: s * 1.1, to: s }, duration: 260, ease: "Back.easeOut" });
-        this.dust(img.x, y0, 4);
+        // Plants go into soil: a little earth kicked up; everything else raises builder's dust.
+        if (piece(p.id).kind === "nature") this.dust(img.x, y0, 3, 0x8f6c48);
+        else this.dust(img.x, y0, 4);
       },
     });
     p.extras.forEach((e) => {
@@ -710,6 +725,9 @@ export class WorldScene extends Phaser.Scene {
           this.syncColumn(i, null);
         } else this.syncColumn(i, change);
         this.eco.townChanged();
+        // During a heatwave or heavy rain, show the new risk straight away.
+        const st = this.store.sim.stats;
+        if (st.heat.phase !== "none" || st.flood.phase !== "none") this.slowVisuals();
         this.needHover = true;
       }),
       bus.on("pulse", ({ i, phase }) => {
@@ -733,9 +751,10 @@ export class WorldScene extends Phaser.Scene {
       }),
       bus.on("moveIn", ({ n }) => this.moveIn(n)),
       // After a heatwave the town handled well, people come back out near the Town Hall.
-      bus.on("heatEnd", ({ score }) => {
+      bus.on("eventEnd", ({ score }) => {
         if (score >= 70) this.time.delayedCall(this.deps.reduced ? 0 : 1500, () => this.stepOutside(idx(TOWN_HALL.x, TOWN_HALL.y)));
       }),
+      bus.on("relief", ({ i, roads, homes }) => this.relief(i, roads, homes)),
       bus.on("fail", ({ i }) => {
         const { x, y } = xy(i);
         const g = P(x, y);
@@ -766,6 +785,9 @@ export class WorldScene extends Phaser.Scene {
       this.badges = [];
       this.butterflies = [];
       this.shimmer = [];
+      this.puddles.clear();
+      this.ripples = [];
+      this.floodedNow.clear();
       this.ground = [];
       this.cols = [];
     });
@@ -892,6 +914,11 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
+  private deepAt(i: number) {
+    const p = this.puddles.get(i);
+    return !!p && p.depth > 0.45;
+  }
+
   /** Eco Pulse: people in homes near the closed plant step out onto the street. */
   private stepOutside(near: number) {
     const homes = this.store.sim.stats.homes;
@@ -935,7 +962,9 @@ export class WorldScene extends Phaser.Scene {
     // In a heatwave, fewer people are out, and those who are keep to the shade.
     const heat = stats.heat;
     const hot = heat.intensity * (1 - this.e.night);
-    const outdoors = (1 - 0.5 * Phaser.Math.Clamp((stats.homeAir - 6) / 30, 0, 1)) * (1 - 0.4 * hot);
+    // Heavy rain keeps most people indoors until the water drains.
+    const wet = stats.flood.phase === "rain" ? stats.flood.intensity : stats.flood.phase === "drain" ? stats.flood.water * 0.5 : 0;
+    const outdoors = (1 - 0.5 * Phaser.Math.Clamp((stats.homeAir - 6) / 30, 0, 1)) * (1 - 0.4 * hot) * (1 - 0.6 * wet);
     const shady = hot > 0.1 && heat.cool ? this.walkTiles.filter((w) => heat.cool![w] >= 0.5) : [];
     const eco = this.eco.vis;
     // How many of each to show.
@@ -970,7 +999,9 @@ export class WorldScene extends Phaser.Scene {
     for (let n = this.agents.length - 1; n >= 0; n--) {
       const a = this.agents[n];
       // People walk a little slower in the heat.
-      a.t += dt * a.speed * (a.kind === "walker" ? 1 - 0.25 * hot : 1);
+      // Vehicles crawl through standing water.
+      const inWater = this.floodedNow.size && a.kind !== "train" && a.kind !== "walker" && (this.deepAt(a.from) || this.deepAt(a.to));
+      a.t += dt * a.speed * (a.kind === "walker" ? 1 - 0.25 * hot : 1) * (inWater ? 0.35 : 1);
       let fx: number;
       let fy: number;
       let dx = 0;
@@ -1003,6 +1034,11 @@ export class WorldScene extends Phaser.Scene {
           let choice = fwd.length ? pick(fwd) : nb.length ? nb[0] : a.to;
           // In the heat, people on foot turn toward the shadier way.
           if (a.kind === "walker" && hot > 0.2 && heat.cool && fwd.length > 1 && Math.random() < 0.7 * hot) choice = fwd.reduce((b, x) => (heat.cool![x] > heat.cool![b] ? x : b));
+          // People on foot step around deep water when they can.
+          if (a.kind === "walker" && this.floodedNow.size && this.deepAt(choice)) {
+            const dry = fwd.filter((x) => !this.deepAt(x));
+            if (dry.length) choice = pick(dry);
+          }
           a.from = a.to;
           a.to = choice;
           a.t = a.from === a.to ? 0.5 : 0;
@@ -1068,7 +1104,10 @@ export class WorldScene extends Phaser.Scene {
     const view = cam.worldView;
     const w = this.e.weather;
     const reduced = this.deps.reduced;
-    const want = reduced ? 0 : w === "storm" ? this.rain.length : w === "rain" ? Math.floor(this.rain.length * 0.6) : 0;
+    // Heavy rain builds up to a full downpour; ordinary rain is lighter.
+    const flood = this.store.sim.stats.flood;
+    const heavy = flood.phase === "rain" ? flood.intensity : 0;
+    const want = reduced ? 0 : Math.max(w === "storm" ? this.rain.length : w === "rain" && flood.phase !== "rain" ? Math.floor(this.rain.length * 0.6) : 0, Math.floor(this.rain.length * heavy));
     this.rain.forEach((d, k) => {
       if (k >= want) {
         if (d.visible) d.setVisible(false);
@@ -1081,7 +1120,7 @@ export class WorldScene extends Phaser.Scene {
       d.y += dt * 520;
     });
     // Cloud shadows drift over the land on grey days.
-    const cloudAlpha = w === "sunny" ? 0 : w === "cloudy" ? 0.12 : w === "rain" ? 0.18 : 0.26;
+    const cloudAlpha = (w === "sunny" ? 0 : w === "cloudy" ? 0.12 : w === "rain" ? 0.18 : 0.26) + 0.1 * heavy;
     for (const c of this.clouds) {
       c.setAlpha(c.alpha + (cloudAlpha - c.alpha) * Math.min(1, dt));
       if (!reduced) {
@@ -1101,6 +1140,102 @@ export class WorldScene extends Phaser.Scene {
       this.tweens.add({ targets: this.flash, alpha: { from: 0.55, to: 0 }, duration: 380, ease: "Quad.easeOut" });
       this.time.delayedCall(140, () => this.tweens.add({ targets: this.flash, alpha: { from: 0.35, to: 0 }, duration: 260 }));
     }
+  }
+
+  // ------------------------------------------------------------------ heavy rain
+  /** Light and wet roads ease toward the weather; puddles grow on roads and the concrete-heavy ones flood. */
+  private updateWater(dt: number, time: number) {
+    const flood = this.store.sim.stats.flood;
+    const gloomTarget = GLOOM[this.e.weather] + (flood.phase === "rain" ? 0.14 * flood.intensity : 0);
+    // Weather changes over about 5 seconds; roads dry over about 20.
+    this.gloomNow += (gloomTarget - this.gloomNow) * Math.min(1, dt / 5);
+    const wetTarget = flood.phase !== "none" ? flood.water : this.e.weather === "rain" || this.e.weather === "storm" ? 0.7 : 0;
+    this.wetNow += (wetTarget - this.wetNow) * Math.min(1, dt / (wetTarget > this.wetNow ? 6 : 20));
+    if (flood.phase === "rain" || flood.phase === "drain") {
+      // Depth on each road: flooded roads fill right up; others only get small puddles, and none beside plenty of green.
+      this.floodedNow = new Set(flood.flooded);
+      const margin = flood.margin!;
+      for (const r of this.roads.concat(this.walkTiles.filter((w) => this.store.town.cols[w].g === "plaza"))) {
+        const f = this.floodedNow.has(r);
+        const target = flood.water * (f ? Phaser.Math.Clamp(0.6 + -margin[r] / 10, 0.6, 1) : margin[r] < 3 ? 0.3 : 0);
+        let p = this.puddles.get(r);
+        if (!p) {
+          if (target <= 0.02) continue;
+          const { x, y } = xy(r);
+          const at = P(x, y);
+          p = { img: this.add.image(at.x, at.y, "fx-puddle").setDepth(OVERLAY_DEPTH + 4).setAlpha(0), depth: 0, flood: f };
+          this.puddles.set(r, p);
+        }
+        // Water rises slowly and drains a little faster where it is shallow.
+        p.depth += (target - p.depth) * Math.min(1, dt / (target > p.depth ? 2.5 : 3));
+        p.flood = f;
+        const full = p.depth > 0.45;
+        if (p.img.texture.key !== (full ? "fx-flood" : "fx-puddle")) p.img.setTexture(full ? "fx-flood" : "fx-puddle");
+        const s = full ? 0.7 + 0.3 * Phaser.Math.Clamp((p.depth - 0.45) / 0.4, 0, 1) : 0.35 + p.depth;
+        p.img.setScale(s / RES).setTint(this.tintNow).setAlpha(Phaser.Math.Clamp(p.depth * 2.2, 0, 0.88));
+      }
+    } else if (this.puddles.size) {
+      for (const p of this.puddles.values()) p.img.destroy();
+      this.puddles.clear();
+      this.floodedNow.clear();
+    }
+    // Raindrops ringing the standing water (a few at a time).
+    if (!this.deps.reduced && flood.phase === "rain" && flood.intensity > 0.3) {
+      const deep = [...this.puddles].filter(([, p]) => p.depth > 0.45);
+      if (deep.length && this.ripples.length < 14 && Math.random() < dt * 10 * flood.intensity) {
+        const [r] = deep[Math.floor(Math.random() * deep.length)];
+        const { x, y } = xy(r);
+        const at = P(x + (Math.random() - 0.5) * 0.6, y + (Math.random() - 0.5) * 0.6);
+        this.ripples.push({ img: this.add.image(at.x, at.y, "fx-ripple").setDepth(OVERLAY_DEPTH + 4.5).setAlpha(0), t: 0 });
+      }
+    }
+    for (let k = this.ripples.length - 1; k >= 0; k--) {
+      const rp = this.ripples[k];
+      rp.t += dt / 0.7;
+      if (rp.t >= 1) {
+        rp.img.destroy();
+        this.ripples.splice(k, 1);
+        continue;
+      }
+      rp.img.setScale((0.3 + rp.t * 0.7) / RES).setAlpha(0.5 * (1 - rp.t));
+    }
+    void time;
+  }
+
+  /** A placement just protected something: the water there recedes, and a short note says what it saved. */
+  private relief(i: number, roads: number[], homes: number[]) {
+    const reduced = this.deps.reduced;
+    for (const r of [...roads, ...homes]) {
+      const { x, y } = xy(r);
+      const at = P(x, y);
+      const ring = this.put("fx-ring", at.x, at.y, OVERLAY_DEPTH + 6).setTint(0x7fe8c8).setAlpha(0.8);
+      this.tweens.add({ targets: ring, alpha: 0, duration: reduced ? 200 : 900, delay: reduced ? 0 : 150, ease: "Quad.easeOut", onComplete: () => ring.destroy() });
+    }
+    // Several plantings in a row add up on one note instead of stacking new ones.
+    const now = this.time.now;
+    const note = this.reliefNote && now < this.reliefNote.until ? this.reliefNote : null;
+    const total = { roads: roads.length + (note?.roads ?? 0), homes: homes.length + (note?.homes ?? 0) };
+    const text = total.roads ? `${total.roads} road ${total.roads === 1 ? "tile" : "tiles"} protected` : `${total.homes} ${total.homes === 1 ? "home" : "homes"} shaded`;
+    const { x, y } = xy(i);
+    const top = this.levelY(x, y, this.visualHeight(this.store.town.cols[i]));
+    let label = note?.label;
+    if (!label) {
+      label = this.add
+        .text(top.x, top.y - 16, text, { fontFamily: "Nunito, system-ui, sans-serif", fontSize: "20px", fontStyle: "800", color: "#eafff6", backgroundColor: "rgba(20,70,56,0.85)", padding: { x: 9, y: 4 } })
+        .setOrigin(0.5, 1)
+        .setScale(0.5)
+        .setDepth(UI_DEPTH + 3)
+        .setAlpha(0);
+    }
+    this.tweens.killTweensOf(label);
+    label.setText(text).setPosition(top.x, top.y - 16);
+    this.tweens.add({ targets: label, alpha: 1, y: top.y - 24, duration: 260, ease: "Quad.easeOut" });
+    const l = label;
+    this.tweens.add({ targets: l, alpha: 0, delay: 1600, duration: 400, onComplete: () => {
+      l.destroy();
+      if (this.reliefNote?.label === l) this.reliefNote = null;
+    } });
+    this.reliefNote = { label, roads: total.roads, homes: total.homes, until: now + 1600 };
   }
 
   // ------------------------------------------------------------------ heatwave
@@ -1223,7 +1358,7 @@ export class WorldScene extends Phaser.Scene {
   private slowVisuals() {
     this.eco.refresh();
     const heat = this.store.sim.stats.heat.intensity;
-    this.tintNow = mixColor(mixColor(dayTint(this.e), HEAT_LIGHT, 0.22 * heat * (1 - this.e.night)), DIM, 0.5 * this.eco.vis) & 0xf8f8f8;
+    this.tintNow = mixColor(mixColor(dayTint(this.e, this.gloomNow), HEAT_LIGHT, 0.22 * heat * (1 - this.e.night)), DIM, 0.5 * this.eco.vis) & 0xf8f8f8;
     this.retint();
     const air = this.eco.airShown;
     for (const s of this.smog) {
@@ -1375,13 +1510,15 @@ export class WorldScene extends Phaser.Scene {
     this.updateAgents(dt);
     this.updateWeather(dt, time);
     this.updateShimmer(time);
+    this.updateWater(dt, time);
     const visBefore = this.eco.vis;
     this.eco.update(dt, time, this.e);
 
     // During an Eco Pulse or an Eco Vision fade, follow the air ten times a second.
     if (this.pulseT >= 0) this.pulseT += dt;
     const hi = this.store.sim.stats.heat.intensity;
-    const fading = this.eco.vis !== visBefore || (this.eco.vis > 0 && this.eco.vis < 1) || this.eco.changing || (hi > 0 && hi < 1);
+    const wetting = Math.abs(this.wetNow - (this.store.sim.stats.flood.water || 0)) > 0.03 && this.store.sim.stats.flood.phase !== "none";
+    const fading = this.eco.vis !== visBefore || (this.eco.vis > 0 && this.eco.vis < 1) || this.eco.changing || (hi > 0 && hi < 1) || wetting;
     if ((this.pulseT >= 0 || fading) && time - this.lastFast > 100) {
       this.lastFast = time;
       this.slowVisuals();
@@ -1426,13 +1563,16 @@ export function mixColor(a: number, b: number, t: number) {
 }
 
 /** World tint for the time of day: warm at dawn and dusk, blue at night. */
-export function dayTint(e: Env) {
+/** How grey each kind of weather makes the light. */
+export const GLOOM = { sunny: 0, cloudy: 0.14, rain: 0.28, storm: 0.42 };
+
+export function dayTint(e: Env, gloomNow?: number) {
   const night = e.night;
   const dusk = Math.max(0, 1 - Math.abs(e.sun - 0.15) / 0.15) * (e.sun > 0 ? 1 : 0.4);
   const mix = mixColor;
   let c = mix(0xffffff, 0x5a6aa8, night * 0.85);
   c = mix(c, 0xffc49a, dusk * 0.35);
-  const gloom = { sunny: 0, cloudy: 0.14, rain: 0.28, storm: 0.42 }[e.weather];
+  const gloom = gloomNow ?? GLOOM[e.weather];
   c = mix(c, 0x8a96a4, gloom);
   // Quantise so tints only update when the change is visible.
   return c & 0xf8f8f8;

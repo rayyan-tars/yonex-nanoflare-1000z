@@ -4,6 +4,7 @@
  * that changes it bumps `rev` so React re-renders and emits a bus event so
  * the scene can animate exactly what changed.
  */
+import type { FloodResult } from "../model/flood";
 import type { HeatResult } from "../model/heat";
 import { piece, type Category } from "../model/pieces";
 import { deserialize, SAVE_KEY, serialize } from "../model/save";
@@ -32,9 +33,14 @@ export interface BusEvents {
   focus: { i: number };
   /** Eco Pulse: a polluting chimney closed and the neighbourhood clears (start), then settles (end). */
   pulse: { i: number; phase: "start" | "end" };
-  /** A heatwave ended; the town's resilience score. */
-  heatEnd: { score: number };
+  /** A heatwave or heavy rain ended; the town's resilience score. */
+  eventEnd: { kind: "heat" | "flood"; score: number };
+  /** A placement just protected roads from flooding or homes from the heat. */
+  relief: { i: number; roads: number[]; homes: number[] };
 }
+
+/** How the town coped with the last heatwave or heavy rain. */
+export type EventResult = { kind: "heat"; r: HeatResult } | { kind: "flood"; r: FloodResult };
 
 export class Bus {
   private map = new Map<keyof BusEvents, Set<(p: never) => void>>();
@@ -98,8 +104,8 @@ export class GameStore {
   awayFor = 0;
   saveState: "new" | "loaded" | "repaired" = "new";
   progress: Progress = { unlocked: 0, done: [] };
-  /** How the town coped with the last heatwave (shown until dismissed). */
-  heatResult: HeatResult | null = null;
+  /** How the town coped with the last heatwave or heavy rain (shown until dismissed). */
+  eventResult: EventResult | null = null;
   /** Eco Vision: the environmental X-ray overlay. */
   ecoVision = false;
   /** While an Eco Pulse runs: where, and when it started (performance.now). */
@@ -213,9 +219,9 @@ export class GameStore {
       this.persist();
     }
     if (e.type === "moveIn") this.bus.emit("moveIn", { n: e.n });
-    if (e.type === "heat") {
-      this.heatResult = e.result;
-      this.bus.emit("heatEnd", { score: e.result.score });
+    if (e.type === "heat" || e.type === "flood") {
+      this.eventResult = e.type === "heat" ? { kind: "heat", r: e.result } : { kind: "flood", r: e.result };
+      this.bus.emit("eventEnd", { kind: e.type, score: e.result.score });
     }
   }
 
@@ -265,9 +271,16 @@ export class GameStore {
       }
       return false;
     }
+    const before = this.sim.stats;
     place(this.town, i, id);
     this.bus.emit("col", { i, change: piece(id).kind === "ground" ? "ground" : "add" });
     this.refresh();
+    // During a heatwave or heavy rain (or the warning before), show straight away what this protected.
+    const after = this.sim.stats;
+    const wasFlooded = new Set(before.flood.flooded);
+    const roads = after.flood.phase !== "none" ? [...wasFlooded].filter((r) => !after.flood.flooded.includes(r)) : [];
+    const homes = after.heat.phase !== "none" ? [...after.heat.shade].filter(([h, sh]) => sh !== "exposed" && before.heat.shade.get(h) === "exposed").map(([h]) => h) : [];
+    if (roads.length || homes.length) this.bus.emit("relief", { i, roads, homes });
     return true;
   }
 
@@ -290,8 +303,8 @@ export class GameStore {
     return true;
   }
 
-  dismissHeatResult() {
-    this.heatResult = null;
+  dismissResult() {
+    this.eventResult = null;
     this.changed();
   }
 
@@ -389,7 +402,7 @@ export class GameStore {
     if (world > this.progress.unlocked) return;
     window.clearInterval(this.pulseTimer);
     this.pulse = null;
-    this.heatResult = null;
+    this.eventResult = null;
     writeLS(SAVE_KEY, null);
     this.startTown(world, this.now());
     this.tool = { kind: "none" };

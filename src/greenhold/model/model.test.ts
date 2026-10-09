@@ -4,8 +4,9 @@ import { deserialize, serialize } from "./save";
 import { analyze, collectTaxes, newSim, tick, weatherAt } from "./sim";
 import { WORLDS } from "./worlds";
 import { powerNetwork } from "./eco";
+import { FLOOD, floodAt, floodMap, nextFlood, type FloodResult } from "./flood";
 import { HEAT, heatAt, nextHeatwave, type HeatResult } from "./heat";
-import { MAX_HEIGHT, N, START_COAL, TOWN_HALL, canPlace, idx, newTown, place, remove, removeInfo, thUpgradeCheck, type Town } from "./world";
+import { MAX_HEIGHT, N, START_COAL, TOWN_HALL, canPlace, idx, inside, newTown, place, remove, removeInfo, thUpgradeCheck, type Town } from "./world";
 
 /** A starting village with plenty of coins and a clear lot south-east of the street. */
 function village(): Town {
@@ -367,5 +368,57 @@ describe("heatwave", () => {
     expect(c.score).toBeGreaterThan(a.score);
     expect(c.power).toBe(1);
     expect(a.power).toBeLessThan(1);
+  }, 60000);
+});
+
+describe("heavy rain", () => {
+  it("warns, rains for 90 seconds, then drains away; never during a heatwave", () => {
+    const w = nextFlood(0);
+    expect(floodAt(w).phase).toBe("forecast");
+    expect(floodAt(w + FLOOD.forecast + 40)).toMatchObject({ phase: "rain", intensity: 1, water: 1 });
+    expect(weatherAt(w + FLOOD.forecast + 40)).toBe("rain");
+    expect(floodAt(w + FLOOD.forecast + FLOOD.length + 10).phase).toBe("drain");
+    expect(floodAt(w + FLOOD.forecast + FLOOD.length + FLOOD.drain).phase).toBe("none");
+    for (let c = 0; c < 3000; c += 5) expect(heatAt(c).phase !== "none" && floodAt(c).phase !== "none").toBe(false);
+  });
+
+  it("floods roads with more concrete than green; a park beside them keeps them dry", () => {
+    const t = village();
+    const before = floodMap(t);
+    expect(before.flooded.length).toBeGreaterThan(0);
+    // A park and trees next to the first flooded road.
+    const f = before.flooded[0];
+    const x = f % N;
+    const y = Math.floor(f / N);
+    let planted = 0;
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const i = idx(x + dx, y + dy);
+        if (inside(x + dx, y + dy) && !t.cols[i].s.length && t.cols[i].g === "grass") {
+          const id = planted === 0 ? "park" : "oak";
+          if (canPlace(t, i, id).ok) {
+            place(t, i, id);
+            planted++;
+          }
+        }
+      }
+    const after = floodMap(t);
+    expect(after.margin[f]).toBeGreaterThan(before.margin[f]);
+    expect(after.flooded).not.toContain(f);
+    expect(after.flooded.length).toBeLessThan(before.flooded.length);
+  });
+
+  it("scores the share of roads that stayed dry, the same every time", () => {
+    const run = (t: Town) => {
+      const sim = newSim();
+      t.clock = nextFlood(0);
+      let r: FloodResult | null = null;
+      for (let k = 0; k < (FLOOD.forecast + FLOOD.length + 2) * 4; k++) for (const e of tick(t, sim, 0.25)) if (e.type === "flood") r = e.result;
+      return r!;
+    };
+    const a = run(village());
+    const b = run(village());
+    expect(a).toEqual(b);
+    expect(a.score).toBe(Math.round(100 * (1 - a.flooded / a.roads)));
   }, 60000);
 });

@@ -1746,3 +1746,37 @@ button:focus-visible {
     top: 150px;
   }
 }
+
+/* Heavy rain */
+.gh-weather--flood {
+  background: rgba(24, 44, 70, 0.7);
+}
+.gh-weather--flood svg {
+  color: #9ad0ff;
+}
+.gh-eco__sw--flood {
+  background: linear-gradient(90deg, #7fd8b0, #5b8fd6, #3a5fb8);
+}
+.gh-eco__dot--wet {
+  background: #5b8fd6;
+}
+.gh-bridge {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #e6f4ea;
+}
+.gh-bridge p {
+  margin: 0;
+  line-height: 1.35;
+}
+.gh-bridge__btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.gh-bridge .gh-btn {
+  padding: 6px 12px;
+  font-size: 12.5px;
+}

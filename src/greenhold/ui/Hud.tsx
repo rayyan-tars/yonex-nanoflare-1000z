@@ -1,10 +1,10 @@
 "use client";
 
-import { Cloud, CloudFog, Drop, CloudLightning, Eye, Fire, Thermometer, Tree, Warning, X, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
+import { Cloud, CloudFog, Drop, CloudLightning, CloudRain as RainIcon, Eye, Fire, Thermometer, Tree, Warning, X, CloudRain, Coins, Eraser, Gear, Globe, Hammer, Lightning, Moon, Plant, Smiley, SmileyMeh, SmileySad, Star, Sun, Trophy, Users } from "@phosphor-icons/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { ecoSummary, powerNetwork } from "../model/eco";
-import type { HeatResult } from "../model/heat";
+import type { EventResult } from "../state/store";
 import { WEATHER, airLabel, env, forecast, problem, type Weather } from "../model/sim";
 import { WORLDS } from "../model/worlds";
 import { TH_TITLES } from "../model/world";
@@ -269,9 +269,24 @@ export function WeatherChip() {
   const e = env(store.town.clock);
   const next = forecast(store.town.clock);
   const h = store.sim.stats.heat;
+  const f = store.sim.stats.flood;
   const Icon = e.sun <= 0 && e.weather === "sunny" ? Moon : WEATHER_ICON[e.weather];
   const hours = (e.dayPhase * 24 + 24) % 24;
   const time = `${String(Math.floor(hours)).padStart(2, "0")}:${String(Math.floor(((hours % 1) * 60) / 10) * 10).padStart(2, "0")}`;
+  if (f.phase === "forecast" || f.phase === "rain") {
+    const sections = f.sections.length;
+    return (
+      <div className={`gh-weather gh-weather--flood${f.phase === "rain" ? " is-on" : ""}`} role="status">
+        <RainIcon weight="fill" aria-hidden="true" />
+        <b>{f.phase === "forecast" ? `Heavy rain in ${clock(f.seconds)}` : `Heavy rain · ${clock(f.seconds)} left`}</b>
+        <span className="gh-heatchips">
+          <span className={sections ? "is-bad" : "is-good"} title="Roads with more concrete than green around them flood">
+            <Drop weight="fill" aria-hidden="true" /> {sections ? `${sections} ${sections === 1 ? "road" : "roads"} at risk` : "Roads safe"}
+          </span>
+        </span>
+      </div>
+    );
+  }
   if (h.phase !== "none") {
     const homes = store.sim.stats.homes.length;
     return (
@@ -306,50 +321,95 @@ export function WeatherChip() {
   );
 }
 
-/** After a heatwave: how the town coped, and what to improve. */
-export function HeatResultCard() {
-  const store = useGame();
-  const r = store.heatResult;
-  useEffect(() => {
-    if (!r) return;
-    const t = window.setTimeout(() => store.dismissHeatResult(), 20000);
-    return () => window.clearTimeout(t);
-  }, [r, store]);
-  return <AnimatePresence>{r && <HeatCard key="heat" r={r} onClose={() => store.dismissHeatResult()} />}</AnimatePresence>;
+const BRIDGE_KEY = "greenhold.bridge.v1";
+/** One optional real-world question after a challenge handled well, shown once per kind of event. */
+const BRIDGE = {
+  heat: { lead: "Shade protected your homes.", ask: "Is there one place around your school that needs more shade?" },
+  flood: { lead: "Your town used green space to handle the rain.", ask: "Where does rainwater collect around your school or street?" },
+};
+function bridgeSeen(kind: string) {
+  try {
+    return (JSON.parse(window.localStorage.getItem(BRIDGE_KEY) ?? "[]") as string[]).includes(kind);
+  } catch {
+    return false;
+  }
+}
+function markBridge(kind: string) {
+  try {
+    const seen = JSON.parse(window.localStorage.getItem(BRIDGE_KEY) ?? "[]") as string[];
+    window.localStorage.setItem(BRIDGE_KEY, JSON.stringify([...seen, kind]));
+  } catch {
+    // Storage blocked: it may show again, which is harmless.
+  }
 }
 
-function HeatCard({ r, onClose }: { r: HeatResult; onClose: () => void }) {
-  const lines: { ok: boolean; text: string }[] = [];
-  const shaded = r.homes - r.exposed;
-  lines.push(r.exposed ? { ok: false, text: `${r.exposed} ${r.exposed === 1 ? "home" : "homes"} overheated with no shade` } : { ok: true, text: `All ${r.homes} homes had shade` });
-  if (r.exposed && shaded) lines.push({ ok: true, text: `${shaded} ${shaded === 1 ? "home was" : "homes were"} protected by shade` });
-  lines.push(r.power >= 0.99 ? { ok: true, text: "Power met peak demand" } : { ok: false, text: `Power fell short: ${Math.round(r.power * 100)}% of demand covered` });
-  lines.push(r.water >= 0.99 ? { ok: true, text: "Water held up" } : { ok: false, text: `Water ran short: ${Math.round(r.water * 100)}% of demand covered` });
-  const tips = [
-    r.exposed ? "Plant 2 trees or a park within 2 tiles of hot homes." : "",
-    r.power < 0.99 ? "Add solar or wind before the next heatwave." : "",
-    r.water < 0.99 ? "Add a reservoir and a filtration plant." : "",
-  ].filter(Boolean);
-  const good = r.score >= 70;
+/** After a heatwave or heavy rain: the score and at most two lines on why. */
+export function EventResultCard() {
+  const store = useGame();
+  const e = store.eventResult;
+  useEffect(() => {
+    if (!e) return;
+    const t = window.setTimeout(() => store.dismissResult(), 20000);
+    return () => window.clearTimeout(t);
+  }, [e, store]);
+  return <AnimatePresence>{e && <ResultCard key={`${e.kind}-${e.r.score}`} e={e} onClose={() => store.dismissResult()} />}</AnimatePresence>;
+}
+
+function resultLines(e: EventResult): string[] {
+  if (e.kind === "flood") {
+    const r = e.r;
+    if (!r.flooded) return ["Green spaces kept every road clear."];
+    if (r.score >= 70) return ["Green spaces protected most roads.", `${r.sections} ${r.sections === 1 ? "road" : "roads"} still flooded: add green beside ${r.sections === 1 ? "it" : "them"}.`];
+    return [`${r.sections} ${r.sections === 1 ? "road" : "roads"} flooded: too much concrete around ${r.sections === 1 ? "it" : "them"}.`, "Add trees or a park beside them."];
+  }
+  const r = e.r;
+  const shade = r.exposed ? `${r.exposed} ${r.exposed === 1 ? "home" : "homes"} overheated: plant trees beside ${r.exposed === 1 ? "it" : "them"}.` : "Shade protected every home.";
+  const supply = r.power < 0.99 ? "Power fell short at the peak: add solar or wind." : r.water < 0.99 ? "Water ran short: add a reservoir and filtration." : "Power and water held up.";
+  return [shade, supply];
+}
+
+function ResultCard({ e, onClose }: { e: EventResult; onClose: () => void }) {
+  const good = e.r.score >= 70;
+  const [bridge] = useState(() => good && !bridgeSeen(e.kind));
+  const done = () => {
+    if (bridge) markBridge(e.kind);
+    onClose();
+  };
+  const b = BRIDGE[e.kind];
   return (
     <motion.div className={`gh-heatcard${good ? " is-good" : ""}`} role="status" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }}>
-      <button type="button" className="gh-heatcard__x" onClick={onClose} aria-label="Close">
+      <button type="button" className="gh-heatcard__x" onClick={done} aria-label="Close">
         <X weight="bold" />
       </button>
       <b className="gh-heatcard__title">
-        <Thermometer weight="fill" aria-hidden="true" /> Heatwave passed
+        {e.kind === "heat" ? <Thermometer weight="fill" aria-hidden="true" /> : <RainIcon weight="fill" aria-hidden="true" />}
+        {e.kind === "heat" ? "Heatwave passed" : "Heavy rain passed"}
       </b>
       <div className="gh-heatcard__score">
-        Resilience <strong>{r.score}%</strong>
+        Resilience <strong>{e.r.score}%</strong>
       </div>
       <ul>
-        {lines.map((l) => (
-          <li key={l.text} className={l.ok ? "is-ok" : "is-bad"}>
-            {l.text}
+        {resultLines(e).map((l) => (
+          <li key={l} className={/flooded|overheated|short/.test(l) ? "is-bad" : "is-ok"}>
+            {l}
           </li>
         ))}
       </ul>
-      {tips.length > 0 && <p className="gh-heatcard__tip">Next time: {tips.join(" ")}</p>}
+      {bridge && (
+        <div className="gh-bridge">
+          <p>
+            <b>{b.lead}</b> {b.ask}
+          </p>
+          <div className="gh-bridge__btns">
+            <button type="button" className="gh-btn gh-btn--green" onClick={done}>
+              I&apos;ll look for one spot
+            </button>
+            <button type="button" className="gh-link" onClick={done}>
+              Keep building
+            </button>
+          </div>
+        </div>
+      )}
       <small>Greenhold simulation indicator</small>
     </motion.div>
   );
@@ -413,6 +473,29 @@ function EcoKey({ onHelp }: { onHelp: () => void }) {
   const store = useGame();
   const s = store.sim.stats;
   const sum = ecoSummary(s, store.sim.air, powerNetwork(store.town, s));
+  const fl = s.flood;
+  if (fl.phase !== "none") {
+    const atRisk = fl.flooded.length;
+    return (
+      <motion.div className="gh-eco__key" role="status" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }}>
+        <span title="Blue: too much concrete, floods in heavy rain. Green: protected.">
+          <i className="gh-eco__sw gh-eco__sw--flood" />
+          Flood risk
+        </span>
+        <span title="Road tiles with more concrete than green within 2 tiles">
+          <i className="gh-eco__dot gh-eco__dot--wet" />
+          Roads at risk <b>{atRisk}</b>
+        </span>
+        <span title="Road tiles with enough green around them">
+          <i className="gh-eco__dot gh-eco__dot--cool" />
+          Protected <b>{fl.roads - atRisk}</b>
+        </span>
+        <button type="button" className="gh-eco__help" onClick={onHelp} aria-label="What am I looking at?">
+          ?
+        </button>
+      </motion.div>
+    );
+  }
   const h = s.heat;
   if (h.phase !== "none")
     return (

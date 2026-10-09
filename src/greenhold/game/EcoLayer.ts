@@ -120,6 +120,9 @@ export class EcoLayer {
   /** 0..1: how far the ground map has switched to the heat layer (during a heatwave). */
   heatMix = 0;
   private lastCool: Float32Array | null = null;
+  /** 0..1: how far the ground map has switched to the flood-risk view (heavy rain). */
+  floodMix = 0;
+  private lastMargin: Float32Array | null = null;
   /** Tiles in or next to the built-up town (where heat builds up). */
   readonly urban = new Uint8Array(N * N);
 
@@ -153,7 +156,7 @@ export class EcoLayer {
 
   /** True while the ground map is fading between the air and heat layers. */
   get changing() {
-    return this.heatMix > 0.001 && this.heatMix < 0.999;
+    return (this.heatMix > 0.001 && this.heatMix < 0.999) || (this.floodMix > 0.001 && this.floodMix < 0.999);
   }
 
   /** The built-up town and 2 tiles around it: where roads and roofs soak up the sun. */
@@ -226,6 +229,9 @@ export class EcoLayer {
     if (s.heat.cool) this.lastCool = s.heat.cool;
     const cool = this.heatMix > 0 ? this.lastCool : null;
     const hm = this.heatMix;
+    if (s.flood.margin) this.lastMargin = s.flood.margin;
+    const margin = this.floodMix > 0 ? this.lastMargin : null;
+    const fm = this.floodMix;
     const ctx = this.heatTex.getContext();
     const data = ctx.getImageData(0, 0, N, N);
     const px = data.data;
@@ -262,6 +268,23 @@ export class EcoLayer {
         px[i * 4 + 1] += (hg - px[i * 4 + 1]) * hm;
         px[i * 4 + 2] += (hb - px[i * 4 + 2]) * hm;
         px[i * 4 + 3] += (ah * 255 - px[i * 4 + 3]) * hm;
+      }
+      if (margin) {
+        // Flood risk: blue where concrete outweighs green around the town, calm green where it is protected.
+        const m = margin[i];
+        const u = this.urban[i];
+        const risk = m < 0 ? Math.max(0.55, Math.min(1, -m / 6)) : 0;
+        const safe = m >= 0 ? Math.max(0.25, Math.min(1, m / 10)) : 0;
+        const ra = u * 0.85 * risk;
+        const sa = u * 0.32 * safe;
+        const af = ra + sa;
+        const fr = af > 0 ? (44 * ra + 122 * sa) / af : 0;
+        const fg = af > 0 ? (96 * ra + 214 * sa) / af : 0;
+        const fb = af > 0 ? (226 * ra + 168 * sa) / af : 0;
+        px[i * 4] += (fr - px[i * 4]) * fm;
+        px[i * 4 + 1] += (fg - px[i * 4 + 1]) * fm;
+        px[i * 4 + 2] += (fb - px[i * 4 + 2]) * fm;
+        px[i * 4 + 3] += (af * 255 - px[i * 4 + 3]) * fm;
       }
     }
     ctx.putImageData(data, 0, 0);
@@ -459,6 +482,8 @@ export class EcoLayer {
     // The ground map turns into the heat layer over a few seconds when a heatwave is forecast, and back after.
     const heatOn = this.h.store.sim.stats.heat.phase !== "none" ? 1 : 0;
     if (this.heatMix !== heatOn) this.heatMix = heatOn > this.heatMix ? Math.min(1, this.heatMix + dt / 3) : Math.max(0, this.heatMix - dt / 4);
+    const floodOn = this.h.store.sim.stats.flood.phase !== "none" ? 1 : 0;
+    if (this.floodMix !== floodOn) this.floodMix = floodOn > this.floodMix ? Math.min(1, this.floodMix + dt / 3) : Math.max(0, this.floodMix - dt / 4);
     const target = this.on ? 1 : 0;
     if (this.vis !== target) {
       const step = this.h.reduced ? 1 : dt / 0.35;
@@ -477,7 +502,8 @@ export class EcoLayer {
     this.roadsG.setAlpha(this.vis);
     this.linesG.setAlpha(this.vis);
     for (const g of this.sourceGlow) g.setAlpha(0.5 * this.vis).setVisible(this.vis > 0);
-    for (const [i, g] of this.plantGlow) g.setAlpha(0.32 * Math.min(1, this.clean[i] / 0.45) * this.vis).setVisible(this.vis > 0);
+    // In the flood view the plant glows step back so the risk reads clearly.
+    for (const [i, g] of this.plantGlow) g.setAlpha(0.32 * Math.min(1, this.clean[i] / 0.45) * this.vis * (1 - 0.75 * this.floodMix)).setVisible(this.vis > 0);
     for (const l of this.labels) l.setAlpha(this.vis).setVisible(this.vis > 0 && l.getData("on") === true);
     if (this.vis <= 0) {
       for (const b of this.bolts.values()) b.setVisible(false);

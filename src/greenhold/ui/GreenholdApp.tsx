@@ -7,7 +7,7 @@ import { GameStore } from "../state/store";
 import { sfx } from "./audio";
 import { StoreContext, useGame, useStoreRef } from "./context";
 import { fmt } from "./format";
-import { Advisor, Dock, EcoVisionButton, FlyLayer, HeatResultCard, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
+import { Advisor, Dock, EcoVisionButton, FlyLayer, EventResultCard, Meters, Toasts, TopBar, WeatherChip } from "./Hud";
 import { Minimap } from "./Minimap";
 import { CompletePanel, GoalsPanel, InfoCard, IntroPanel, SettingsPanel, StarsPanel, TownHallPanel, WorldsPanel } from "./Panels";
 import { Shop } from "./Shop";
@@ -118,7 +118,7 @@ function Game() {
         <TopBar />
         <WeatherChip />
         <EcoVisionButton />
-        <HeatResultCard />
+        <EventResultCard />
         <Meters />
         {!store.category && <Minimap />}
         {store.tool.kind !== "none" && (

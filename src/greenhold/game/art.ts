@@ -805,6 +805,50 @@ export class Art {
     this.bake("fx-puff", 32, 32, 16, 16, (ctx) => soft(ctx, 0, 0, 16, 0xffffff, 0.9));
     this.bake("fx-smog", 128, 128, 64, 64, (ctx) => soft(ctx, 0, 0, 64, 0xffffff, 0.7));
     this.bake("fx-glow", 64, 64, 32, 32, (ctx) => soft(ctx, 0, 0, 32, 0xffffff, 1));
+    // Standing water: a shallow sheet filling a road tile, a small puddle, and a raindrop ring.
+    this.bake("fx-flood", TW + 4, TH + 4, TW / 2 + 2, TH / 2 + 2, (ctx) => {
+      const d = [P(-0.47, -0.47), P(0.47, -0.47), P(0.47, 0.47), P(-0.47, 0.47)];
+      ctx.beginPath();
+      d.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.closePath();
+      const g = ctx.createLinearGradient(-TW / 2, -TH / 2, TW / 2, TH / 2);
+      g.addColorStop(0, "rgba(150,190,218,0.94)");
+      g.addColorStop(1, "rgba(96,140,176,0.94)");
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(205,225,235,0.55)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      // Sky reflected in the water.
+      ctx.strokeStyle = "rgba(245,250,253,0.8)";
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.moveTo(-12, -2);
+      ctx.lineTo(4, -6);
+      ctx.moveTo(-2, 5);
+      ctx.lineTo(10, 2);
+      ctx.stroke();
+    });
+    this.bake("fx-puddle", 30, 16, 15, 8, (ctx) => {
+      ctx.fillStyle = "rgba(100,138,168,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(-3, 0, 9, 4.2, 0.1, 0, Math.PI * 2);
+      ctx.ellipse(5, 1, 6, 3, -0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(230,242,248,0.6)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(-8, -1);
+      ctx.lineTo(-2, -2.4);
+      ctx.stroke();
+    });
+    this.bake("fx-ripple", 24, 12, 12, 6, (ctx) => {
+      ctx.strokeStyle = "rgba(235,245,250,0.9)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 10, 4.6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
     // Heat shimmer: a few faint wavy lines of hot air just above the ground.
     this.bake("fx-shimmer", 44, 18, 22, 14, (ctx) => {
       ctx.strokeStyle = "rgba(255,255,255,0.9)";

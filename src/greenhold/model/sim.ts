@@ -4,6 +4,7 @@
  * plants. Sun and wind count at their daily average, so the town doesn't
  * black out every night. Everything is simplified game units.
  */
+import { floodAt, floodClearing, floodMap, floodResult, type FloodPhase, type FloodResult } from "./flood";
 import { AC_EXTRA, HEAT_WATER, heatAt, heatSkies, heatResult, shadeMap, shadeOf, type HeatLog, type HeatPhase, type HeatResult, type Shade } from "./heat";
 import { piece } from "./pieces";
 import { CHEST_CAP, N, PAVED, TH_UPGRADE, idx, inside, xy, type Town } from "./world";
@@ -41,6 +42,10 @@ export const WEATHER: Record<Weather, { label: string; solar: number; wind: numb
 export function weatherAt(clock: number): Weather {
   // Heatwaves are clear and sunny from the first warning until a little after the heat ends.
   if (heatSkies(clock)) return "sunny";
+  // Heavy rain: clouds gather during the warning, rain, then clouds while the water drains.
+  const f = floodAt(clock).phase;
+  if (f !== "none") return f === "rain" ? "rain" : "cloudy";
+  if (floodClearing(clock)) return "sunny";
   const n = noise(clock / 90 + 50);
   return n < 0.4 ? "sunny" : n < 0.64 ? "cloudy" : n < 0.86 ? "rain" : "storm";
 }
@@ -121,6 +126,22 @@ export interface Stats {
   stars: boolean[];
   starCount: number;
   heat: HeatStats;
+  flood: FloodStats;
+}
+
+/** Heavy rain as it affects the town right now (see model/flood). */
+export interface FloodStats {
+  phase: FloodPhase;
+  intensity: number;
+  /** 0..1 standing water (drains after the rain). */
+  water: number;
+  seconds: number;
+  /** Green minus concrete within 2 tiles of each tile (null when no rain is due). */
+  margin: Float32Array | null;
+  roads: number;
+  /** Roads that flood in this rain, and how they group into sections. */
+  flooded: number[];
+  sections: number[][];
 }
 
 /** The heatwave as it affects the town right now (see model/heat). */
@@ -146,10 +167,12 @@ export interface Sim {
   stats: Stats;
   /** The heatwave in progress, being scored. */
   heat: HeatLog | null;
+  /** Heavy rain in progress: the flooding while it pours hardest. */
+  flood: { roads: number; flooded: number; sections: number } | null;
 }
 
 export function newSim(): Sim {
-  return { air: new Float32Array(N * N), stats: null as unknown as Stats, heat: null };
+  return { air: new Float32Array(N * N), stats: null as unknown as Stats, heat: null, flood: null };
 }
 
 export const STAR_NAMES = [
@@ -257,6 +280,16 @@ export function analyze(t: Town, air: Float32Array): Stats {
       heat.acPeak += homeUse.get(h)! * occ * AC_EXTRA * (1 - Math.min(1, cool[h]));
     }
   }
+  // Heavy rain: which roads flood.
+  const fs = floodAt(t.clock);
+  const flood: FloodStats = { phase: fs.phase, intensity: fs.intensity, water: fs.water, seconds: fs.seconds, margin: null, roads: 0, flooded: [], sections: [] };
+  if (fs.phase !== "none") {
+    const m = floodMap(t);
+    flood.margin = m.margin;
+    flood.roads = m.roads.length;
+    flood.flooded = m.flooded;
+    flood.sections = m.sections;
+  }
   const baseDemand = (housing ? (residents * insulSum) / housing : 0) + use;
   const demand = baseDemand + heat.acPeak * heat.intensity;
   const weather = weatherAt(t.clock);
@@ -321,6 +354,8 @@ export function analyze(t: Town, air: Float32Array): Stats {
   if (waterDemand > waterSupply + 0.01) happiness -= 20 * Math.min(1, (waterDemand - waterSupply) / waterDemand);
   // Overheated homes are uncomfortable (nobody is harmed; they just like the town less).
   if (homes.length) happiness -= 12 * heat.intensity * (heat.exposed / homes.length);
+  // Flooded streets are a nuisance (nothing is damaged).
+  if (flood.roads) happiness -= 8 * flood.water * (flood.flooded.length / flood.roads);
   happiness = Math.max(5, Math.min(100, happiness));
   // Would power and water hold at the peak of the heat?
   heat.powerHolds = supply >= baseDemand + heat.acPeak - 0.01;
@@ -362,6 +397,7 @@ export function analyze(t: Town, air: Float32Array): Stats {
     stars,
     starCount: stars.filter(Boolean).length,
     heat,
+    flood,
   };
 }
 
@@ -419,7 +455,7 @@ export function advectAir(air: Float32Array, inputs: { src: Float32Array; clean:
   air.set(out);
 }
 
-export type SimEvent = { type: "goal"; id: string } | { type: "world" } | { type: "moveIn"; n: number } | { type: "heat"; result: HeatResult };
+export type SimEvent = { type: "goal"; id: string } | { type: "world" } | { type: "moveIn"; n: number } | { type: "heat"; result: HeatResult } | { type: "flood"; result: FloodResult };
 
 /** Advances the town by `dt` seconds of play. */
 export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
@@ -445,6 +481,13 @@ export function tick(t: Town, sim: Sim, dt: number): SimEvent[] {
   } else if (hs.phase !== "event" && sim.heat) {
     if (sim.heat.samples > 0) events.push({ type: "heat", result: heatResult(sim.heat) });
     sim.heat = null;
+  }
+
+  // Heavy rain: track the flooding while it pours (trees planted during the rain still count); report when it stops.
+  const fl = s.flood;
+  if (fl.phase === "rain" && fl.intensity >= 0.6) sim.flood = { roads: fl.roads, flooded: fl.flooded.length, sections: fl.sections.length }; else if (fl.phase !== "rain" && sim.flood) {
+    events.push({ type: "flood", result: floodResult(sim.flood) });
+    sim.flood = null;
   }
 
   // People move in while there's room and the town is pleasant; they leave if it isn't.
@@ -506,15 +549,20 @@ export interface Tip {
 
 /** A problem to fix right now, if there is one; otherwise null (the current goal shows instead). */
 export function problem(t: Town, s: Stats): Tip | null {
+  const f = s.flood;
+  if (f.phase === "forecast") return { tone: "warn", key: "flood-forecast", text: "Trees and green spaces help absorb heavy rain." };
+  if (f.phase === "rain") {
+    if (f.sections.length) return { tone: "warn", key: "flood-rain", text: "That road is flooding: it needs green beside it.", at: f.sections[0][0] };
+    return { tone: "good", key: "flood-rain", text: "The green spaces are soaking up the rain." };
+  }
   const h = s.heat;
-  if (h.phase === "forecast")
-    return { tone: "warn", key: "heat-forecast", text: `A heatwave is coming in ${Math.ceil(h.seconds)}s. Shade, clean power and water will help your town cope.` };
+  if (h.phase === "forecast") return { tone: "warn", key: "heat-forecast", text: "A heatwave is coming: shade, power and water will help." };
   if (h.phase === "event") {
     const first = [...h.shade].find(([, sh]) => sh === "exposed")?.[0];
-    if (h.exposed) return { tone: "warn", text: `Heatwave: ${h.exposed} ${h.exposed === 1 ? "home has" : "homes have"} no shade. 2 trees, a park or a green roof within 2 tiles cools a home.`, at: first };
-    if (!h.powerHolds || s.energy.supply < s.energy.demand - 0.01) return { tone: "warn", text: "Heatwave: air-conditioning is straining the power. Add solar panels or a wind turbine." };
-    if (!h.waterHolds || s.water.supply < s.water.demand - 0.01) return { tone: "warn", text: "Heatwave: water is running short. Add a reservoir and filtration." };
-    return { tone: "good", text: "Heatwave: your town is coping. Shade, power and water are all holding." };
+    if (h.exposed) return { tone: "warn", key: "heat-shade", text: `${h.exposed === 1 ? "That home is" : `${h.exposed} homes are`} too hot: 2 trees or a park beside it will shade it.`, at: first };
+    if (!h.powerHolds || s.energy.supply < s.energy.demand - 0.01) return { tone: "warn", key: "heat-power", text: "Air-conditioning is straining the power: add solar or wind." };
+    if (!h.waterHolds || s.water.supply < s.water.demand - 0.01) return { tone: "warn", key: "heat-water", text: "Water is running short: add a reservoir and filtration." };
+    return { tone: "good", key: "heat-ok", text: "Your town is coping with the heat." };
   }
   if (s.noRoof.length) return { tone: "warn", text: "A building needs a roof (or rooftop solar) before anyone can live in it.", at: s.noRoof[0] };
   if (s.noAccess.length) return { tone: "warn", text: "Nobody can reach that building. Lay a path, bike lane or road within 2 tiles.", at: s.noAccess[0] };
